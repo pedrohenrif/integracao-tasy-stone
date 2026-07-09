@@ -1,0 +1,16 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: stone-rabbitmq
+    ports:
+      # Host ports offset to avoid conflict with other local RabbitMQ instances
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: stone
+      RABBITMQ_DEFAULT_PASS: stone
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5

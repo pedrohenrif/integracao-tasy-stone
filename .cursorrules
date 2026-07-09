@@ -1,0 +1,36 @@
+# Diretrizes de Desenvolvimento (Rules) - Integração Stone/Tasy
+
+## Stack Tecnológica Obrigatória
+- **Linguagem:** Python 3.10+
+- **Framework API:** FastAPI (somente em `stone-extracao`)
+- **Validação e Tipagem:** Pydantic v2
+- **Mensageria:** RabbitMQ (Producer/Consumer)
+- **Arquitetura:** DDD por serviço (domain / application / infrastructure / interfaces)
+
+## Dois serviços (repositórios)
+
+1. **`/stone-extracao`** — Extração Stone (Producer). Só valida e publica na fila. Sem Oracle/Tasy.
+2. **`/tasy-insercao`** — Inserção Tasy (Consumer). Regras de negócio + inserts. Retry/DLQ obrigatório.
+
+## Regras de Arquitetura e Código
+
+1. **Desacoplamento Cartão vs PIX:**
+   - Nunca misture PIX com Cartão.
+   - Cartão = job/busca ativa em lote.
+   - PIX = webhook (fase 2).
+
+2. **Producer/Consumer:**
+   - FastAPI **não** faz insert no Tasy.
+   - Consumer concentra regras e SQL (espelho GA111: Caixa → Dia → Transação).
+
+3. **Legado GA111:**
+   - Consulte `/GA111-IntegrarDadosMaquininhaStoneTasy` para SQL e parâmetros Tasy.
+
+4. **Idempotência e Retry:**
+   - Processar a mesma `id_stone` N vezes não pode duplicar no Tasy.
+   - Falha transitória → reenvio com delay (fila retry). Nunca descartar o payload sem DLQ.
+   - Logs: Recebido → Enfileirado → Consumido → Inserido / Retry / DLQ.
+
+5. **Organização do Workspace:**
+   - Código novo em `/stone-extracao` ou `/tasy-insercao`.
+   - Ignore `/api-pagar-me` e trate `/integracao-transacoes-tasy` como depreciado.

@@ -1,0 +1,29 @@
+[project]
+name = "tasy-insercao"
+version = "0.1.0"
+description = "Serviço de inserção Tasy — Consumer RabbitMQ + Oracle/Postgres (retry/DLQ)"
+authors = [{name = "Pedro", email = "pedrofurtado@ghr.com"}]
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "pydantic-settings (>=2.13.1,<3.0.0)",
+    "pydantic (>=2.0.0,<3.0.0)",
+    "aio-pika (>=9.5.0,<10.0.0)",
+    "oracledb (>=2.0.0,<4.0.0)",
+    "psycopg[binary] (>=3.2.0,<4.0.0)",
+    "workalendar (>=17.0.0,<18.0.0)",
+]
+
+[tool.poetry]
+packages = [{include = "tasy_insercao", from = "src"}]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = ["pytest (>=8.0.0,<9.0.0)"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
