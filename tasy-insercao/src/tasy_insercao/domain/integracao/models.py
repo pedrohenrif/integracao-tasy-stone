@@ -11,6 +11,7 @@ class TipoTransacaoCartao(str, Enum):
     DEBIT_CARD = "debit_card"
     CREDIT_CARD = "credit_card"
     PREPAID_DEBIT = "prepaid_debit"
+    PIX = "pix"
     UNKNOWN = "unknown"
 
 
@@ -31,7 +32,7 @@ class TransacaoCartao(BaseModel):
 
 
 class EventoFilaCartao(BaseModel):
-    """Mesmo contrato publicado por stone-extracao."""
+    """Mesmo contrato publicado por stone-extracao (cartão)."""
 
     event_type: str = "cartao.transaction"
     source: str = "stone.conciliation"
@@ -42,12 +43,43 @@ class EventoFilaCartao(BaseModel):
     transaction: TransacaoCartao
 
 
+class TransacaoPix(BaseModel):
+    """Contrato PIX publicado por stone-extracao (fila separada)."""
+
+    id_stone: str
+    e2e_id: str | None = None
+    vl_transacao: Decimal
+    dt_movimentacao: datetime
+    nr_serie_maquininha: str
+    status: str = "paid"
+    payment_method: str = "pix"
+    merchant_document: str | None = None
+    fee_amount: Decimal | None = None
+    payer_name: str | None = None
+    payer_document: str | None = None
+    operation: str | None = None
+    stone_code: str | None = None
+    reference_date: str | None = None
+
+
+class EventoFilaPix(BaseModel):
+    event_type: str = "pix.transaction"
+    source: str = "stone.conciliation.pix"
+    received_at: datetime
+    attempt: int = Field(default=1, ge=1)
+    first_seen_at: datetime | None = None
+    last_error: str | None = None
+    transaction: TransacaoPix
+
+
 class StatusIntegracao(int, Enum):
     PENDENTE = 1
     PROCESSANDO = 2
     INTEGRADO = 5
     ERRO_RETRY = 6
     ERRO_DEFINITIVO = 7
+    # Movto cartão no Tasy sem caixa_saldo_diario / caixa_receb (serial sem cadastro)
+    SEM_TESOURARIA = 8
 
 
 class ResultadoIntegracao(BaseModel):
@@ -57,3 +89,4 @@ class ResultadoIntegracao(BaseModel):
     retryable: bool = False
     nr_sequencia_pg: int | None = None
     nr_seq_caixa_receb: int | None = None
+    fluxo: str = "cartao"

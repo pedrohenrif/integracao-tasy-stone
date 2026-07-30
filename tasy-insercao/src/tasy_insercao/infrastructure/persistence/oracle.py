@@ -106,11 +106,27 @@ class TasyOracleRepository:
             },
         )
 
-    def inserir_movto_cartao(self, params: dict) -> None:
-        self.db.execute(ora.INSERT_MOVTO_CARTAO, params)
+    def inserir_movto_cartao(self, params: dict) -> int:
+        return self.db.execute_returning(ora.INSERT_MOVTO_CARTAO, params)
 
-    def inserir_movto_cartao_parcelado(self, params: dict) -> None:
-        self.db.execute(ora.INSERT_MOVTO_CARTAO_PARCELADO, params)
+    def inserir_movto_cartao_sem_tesouraria(self, params: dict) -> int:
+        """Insert movto sem nr_seq_caixa_rec (maquininha/caixa não cadastrados)."""
+        return self.db.execute_returning(ora.INSERT_MOVTO_CARTAO_SEM_TESOURARIA, params)
+
+    def inserir_movto_cartao_parcelado(self, params: dict) -> int:
+        return self.db.execute_returning(ora.INSERT_MOVTO_CARTAO_PARCELADO, params)
 
     def inserir_documento(self, params: dict) -> None:
         self.db.execute(ora.INSERT_MOVTO_TRANS_FINANC, params)
+
+    def corrigir_vinculo_documentos_stone(self) -> int:
+        """Preenche NR_SEQ_MOVTO_CARTAO / saldo / caixa nos docs Stone órfãos."""
+        with self.db.cursor() as cur:
+            cur.execute(ora.UPDATE_DOC_STONE_VINCULO_CARTAO)
+            return int(cur.rowcount or 0)
+
+    def corrigir_trans_e_valor_documentos_stone(self) -> int:
+        """Alinha nr_seq_trans_financ ao caixa_receb e vl ao total do cartão."""
+        with self.db.cursor() as cur:
+            cur.execute(ora.UPDATE_DOC_STONE_TRANS_E_VALOR)
+            return int(cur.rowcount or 0)

@@ -4,27 +4,44 @@
 
 | Serviço | Descrição | Como subir |
 |---------|-----------|------------|
-| [stone-extracao](./stone-extracao) | Extração Stone (FastAPI Producer) | `poetry run uvicorn stone_extracao.interfaces.api.main:app --port 8000` |
-| [tasy-insercao](./tasy-insercao) | Inserção Tasy (Consumer + retry/DLQ) | `poetry run python -m tasy_insercao` |
+| [stone-extracao](./stone-extracao) | Extração Stone — Cartão + PIX (FastAPI) | `poetry run uvicorn stone_extracao.interfaces.api.main:app --reload --port 8000` |
+| [tasy-insercao](./tasy-insercao) | Inserção Tasy (Consumer cartão/PIX + retry/DLQ) | `poetry run python -m tasy_insercao` |
+| [portal-controle](./portal-controle) | Portal React (login, integrações, erros, filas) | API `:8001` + `npm run dev` → :5173 |
 
 ## Infra compartilhada
 
-```bash
+```powershell
 docker compose up -d   # RabbitMQ :5673 / UI :15673 (stone/stone)
 ```
 
-## Fluxo
+## Fluxos
 
 ```
-Stone API → stone-extracao → RabbitMQ → tasy-insercao → Postgres staging + Oracle Tasy
+Cartão: cron/API D-1 → stone-extracao → stone.cartao.transactions → tasy-insercao → Tasy
+PIX:    request → webhook /pix/webhook → stone.pix.transactions → tasy-insercao → Tasy
 ```
+
+Cartão em prod: sempre **retroativo (dia anterior)**. Endpoint `POST /cartao/conciliation/d-1` ou cron (`CARTAO_CRON_ENABLED=true`, 06:00 BRT).
+
+## Deploy VM Windows (Cotolengo)
+
+Ver **[DEPLOY_VM_WINDOWS.md](./DEPLOY_VM_WINDOWS.md)** (clone, Postgres, RabbitMQ, portal na rede).
+
+## Testes locais (passo a passo)
+
+Ver guia completo: **[TESTES_LOCAIS.md](./TESTES_LOCAIS.md)**
+
+Resumo:
+
+1. **Parte 1 — Extração:** Docker + `stone-extracao` → `POST /cartao/conciliation` → painel `/painel`
+2. **Parte 2 — Homolog:** preencher `.env` do `tasy-insercao` (Postgres + Oracle) → subir consumer → validar status/Tasy
 
 ## Homologação (checklist)
 
 1. Copiar `.env.example` → `.env` em cada serviço  
-2. Colocar `STONE_API_TOKEN` em `stone-extracao` e `STONE_USE_SAMPLE=false`  
-3. Preencher Postgres + Oracle em `tasy-insercao`  
-4. Subir RabbitMQ + os dois processos  
-5. `POST http://localhost:8000/cartao/conciliation?date=YYYYMMDD`
+2. `STONE_API_TOKEN` + `STONE_MERCHANT_ID` corretos em `stone-extracao`  
+3. Postgres + Oracle homolog em `tasy-insercao`  
+4. Cadastro de maquininhas / mapeamento no staging  
+5. Subir RabbitMQ + os dois processos  
 
-Documentação detalhada: [context.md](./context.md)
+Documentação: [context.md](./context.md) · Debug insert: [tasy-insercao/DEBUG.md](./tasy-insercao/DEBUG.md)

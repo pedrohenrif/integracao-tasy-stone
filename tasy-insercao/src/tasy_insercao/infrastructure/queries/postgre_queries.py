@@ -8,17 +8,20 @@ SELECT
 FROM
     maquininha_stone ms
 WHERE
-    ms.nr_serie_maquininha = %(nr_serie_maquininha)s
+    UPPER(ms.nr_serie_maquininha) = UPPER(%(nr_serie_maquininha)s)
+    AND ms.ie_status = 'A'
 """
 
+# Schema Cotolengo: cd_tipo_transacao + cd_bandeira (nullable no PIX)
 SELECT_CARTAO_BANDEIRA = """
 SELECT
     cd_cartao_bandeira_tasy
 FROM
     mapeamento_transacoes_tasy
 WHERE
-    ds_tipo_transacao_api = %(ds_tipo_transacao_api)s
-    AND ds_bandeira_api = %(ds_bandeira_api)s
+    cd_tipo_transacao = %(cd_tipo_transacao)s
+    AND cd_bandeira = %(cd_bandeira)s
+LIMIT 1
 """
 
 SELECT_TRANSACAO_SEM_BANDEIRA = """
@@ -27,8 +30,9 @@ SELECT
 FROM
     mapeamento_transacoes_tasy
 WHERE
-    ds_tipo_transacao_api = %(ds_tipo_transacao_api)s
-    AND ds_bandeira_api = 'none'
+    cd_tipo_transacao = %(cd_tipo_transacao)s
+    AND cd_bandeira IS NULL
+LIMIT 1
 """
 
 SELECT_REGISTRO_POR_ID_STONE = """

@@ -17,7 +17,7 @@
 1. **Desacoplamento Cartão vs PIX:**
    - Nunca misture PIX com Cartão.
    - Cartão = job/busca ativa em lote.
-   - PIX = webhook (fase 2).
+   - PIX = solicitar extrato + webhook público (fila `stone.pix.transactions`).
 
 2. **Producer/Consumer:**
    - FastAPI **não** faz insert no Tasy.

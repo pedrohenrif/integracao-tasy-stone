@@ -1,0 +1,31 @@
+# Secrets
+.env
+**/.env
+!.env.example
+!**/.env.example
+
+# Python
+**/__pycache__/
+**/.venv/
+**/venv/
+**/.pytest_cache/
+**/*.pyc
+**/poetry.lock
+
+# Runtime state (painel / scheduler)
+**/cron_cartao_state.json
+
+# Frontend
+**/node_modules/
+**/dist/
+**/.vite/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+Logs/

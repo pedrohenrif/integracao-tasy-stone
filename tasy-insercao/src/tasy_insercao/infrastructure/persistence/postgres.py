@@ -7,7 +7,12 @@ import psycopg
 from psycopg.rows import tuple_row
 
 from tasy_insercao.domain.integracao.models import TransacaoCartao
-from tasy_insercao.domain.integracao.policies import map_stone_brand, map_tipo_para_api, to_float_money
+from tasy_insercao.domain.integracao.policies import (
+    map_bandeira_para_local,
+    map_stone_brand,
+    map_tipo_para_local,
+    to_float_money,
+)
 from tasy_insercao.infrastructure.config.logging import get_logger
 from tasy_insercao.infrastructure.config.settings import settings
 from tasy_insercao.infrastructure.queries import postgre_queries as pg
@@ -80,17 +85,48 @@ class StagingPostgresRepository:
             "cd_transacao_financeira": row[2],
         }
 
-    def get_bandeira_tasy(self, tipo_api: str, bandeira: str) -> int | None:
-        row = self.db.fetchone(
-            pg.SELECT_CARTAO_BANDEIRA,
-            {"ds_tipo_transacao_api": tipo_api, "ds_bandeira_api": bandeira},
-        )
+    def find_maquininha_config(self, nr_serie: str) -> dict | None:
+        """Retorna config ou None (sem raise) — usado no fluxo Sem Tesouraria."""
+        row = self.db.fetchone(pg.SELECT_MAQUININHA_CONFIG, {"nr_serie_maquininha": nr_serie})
         if not row:
+            return None
+        return {
+            "nr_serie_maquininha": row[0],
+            "cd_caixa": row[1],
+            "cd_transacao_financeira": row[2],
+        }
+
+    def get_bandeira_tasy(self, tipo_api: str, bandeira: str) -> int | None:
+        """Resolve id Tasy via mapeamento Cotolengo (tipo/bandeira numéricos)."""
+        cd_tipo = map_tipo_para_local(tipo_api)
+        if cd_tipo is None:
+            return None
+
+        cd_bandeira = map_bandeira_para_local(bandeira)
+        row = None
+        if cd_bandeira is not None:
+            row = self.db.fetchone(
+                pg.SELECT_CARTAO_BANDEIRA,
+                {"cd_tipo_transacao": cd_tipo, "cd_bandeira": cd_bandeira},
+            )
+        if not row:
+            # PIX e fallbacks sem bandeira (cd_bandeira IS NULL)
             row = self.db.fetchone(
                 pg.SELECT_TRANSACAO_SEM_BANDEIRA,
-                {"ds_tipo_transacao_api": tipo_api},
+                {"cd_tipo_transacao": cd_tipo},
             )
-        return int(row[0]) if row else None
+        # Fallbacks: débito sem bandeira → Pix (3); pix explícito já usa tipo 3
+        if not row and tipo_api in ("debit_card", "pix"):
+            row = self.db.fetchone(
+                pg.SELECT_TRANSACAO_SEM_BANDEIRA,
+                {"cd_tipo_transacao": 3},
+            )
+        if not row:
+            return None
+        valor = int(row[0])
+        # 0 = placeholder inválido
+        return valor if valor > 0 else None
+
 
     def update_status(self, nr_sequencia: int | None, status: int, obs: str) -> None:
         if nr_sequencia is None:
@@ -127,7 +163,8 @@ class StagingPostgresRepository:
             "cd_autorizacao": tx.cd_autorizacao,
             "vl_transacao": to_float_money(tx.vl_transacao),
             "id_stone": tx.id_stone,
-            "cd_tipo_transacao": map_tipo_para_api(tx.cd_tipo_transacao.value),
+            # Mantém o tipo original da Stone (prepaid_debit ≠ debit_card no staging/portal)
+            "cd_tipo_transacao": tx.cd_tipo_transacao.value,
             "cd_bandeira": (map_stone_brand(tx.cd_bandeira) if tx.cd_bandeira else None),
             "qt_parcelas": tx.qt_parcelas,
             "ie_transacao_parcelada": "S" if (tx.ie_transacao_parcelada or tx.qt_parcelas > 1) else "N",

@@ -9,51 +9,63 @@ O legado (`GA111-IntegrarDadosMaquininhaStoneTasy`) usava scraping; a nova arqui
 
 | Serviço | Pasta | Papel |
 |---------|-------|-------|
-| **stone-extracao** | `/stone-extracao` | Producer FastAPI: busca conciliação Cartão, parseia, publica na fila |
-| **tasy-insercao** | `/tasy-insercao` | Consumer: regras de negócio + insert Oracle Tasy + staging Postgres |
+| **stone-extracao** | `/stone-extracao` | Producer FastAPI: Cartão (batch) + PIX (request/webhook) → filas |
+| **tasy-insercao** | `/tasy-insercao` | Consumer: regras de negócio + insert Oracle + staging Postgres |
 
 Mensageria compartilhada: RabbitMQ (`docker-compose.yml` na raiz).
 
 ```
-Stone API  →  stone-extracao  →  RabbitMQ  →  tasy-insercao  →  Postgres + Oracle Tasy
+Cartão: Stone API  → stone-extracao → stone.cartao.transactions → tasy-insercao → Tasy
+PIX:    Stone API (request) → webhook público → stone.pix.transactions → tasy-insercao → Tasy
 ```
 
 ## 3. Arquitetura DDD
-Cada serviço segue camadas: `domain` → `application` → `infrastructure` → `interfaces`.
-O contrato da fila (`EventoFilaCartao`) é o ponto de integração entre os bounded contexts.
+Cada serviço: `domain` → `application` → `infrastructure` → `interfaces`.  
+Cartão e PIX são bounded contexts separados (filas e contratos distintos).
 
 ## 4. Fluxos
 
-### Cartão (implementado)
-- Batch: `POST /cartao/conciliation?date=YYYYMMDD` em **stone-extracao**
-- Endpoint Stone: `https://conciliation.stone.com.br/v2/merchant/{merchant_id}/conciliation-file/{data}`
+### Cartão
+- `POST /cartao/conciliation?date=YYYYMMDD`
+- Endpoint: `https://conciliation.stone.com.br/v2/merchant/{StoneCode}/conciliation-file/{data}`
+- StoneCode exemplo: `116852622`
 
-### PIX (fase 2)
-- Webhook / extrato PIX — ainda não implementado
+### PIX
+1. Cadastrar webhook HTTPS: `POST /pix/webhook/register` → Stone `POST /v2/webhook`
+2. Solicitar extrato: `POST /pix/conciliation/request?date=YYYY-MM-DD`
+3. Stone notifica: `POST /pix/webhook` com `{"type":"pix","downloadUrl"|"url":"..."}`
+4. Serviço baixa o CSV, parseia e publica em `stone.pix.transactions`
+- Endpoint request: `POST https://conciliation.stone.com.br/v2/merchant/{CNPJ}/conciliation-file/pix/{data}`
+- CNPJ exemplo: `76610690000162`
+- Formato do extrato: CSV (valores em centavos)
+- Pedido só após 03:00 do dia seguinte (regra Stone)
 
 ## 5. Retry e anti-duplicidade (tasy-insercao)
-- Não descarta a mensagem em falha transitória: reenvia via fila **retry** com delay
-- Após esgotar tentativas: vai para **DLQ** (payload preservado)
-- Idempotência por `id_stone` (status PG + observação no `movto_cartao_cr`)
+- Falha transitória → fila retry com delay
+- Esgotou tentativas → DLQ (payload preservado)
+- Idempotência por `id_stone`
 
 ## 6. Regras de negócio (GA111)
-Sequência: **Caixa → Dia → Transação** (cartão / parcelado). Fonte: `/GA111-IntegrarDadosMaquininhaStoneTasy`.
+Sequência: **Caixa → Dia → Transação**.  
+PIX no Tasy segue regra de débito.
 
 ## 7. Workspace
 
 | Pasta | Status |
 |-------|--------|
-| `/stone-extracao` | **Ativo** — extração |
-| `/tasy-insercao` | **Ativo** — inserção |
-| `/GA111-IntegrarDadosMaquininhaStoneTasy` | Legado (referência SQL/regras) |
-| `/integracao-transacoes-tasy` | **Depreciado** (scaffold monolítico anterior) |
-| `/api-pagar-me` | Obsoleto — ignorar |
+| `/stone-extracao` | **Ativo** |
+| `/tasy-insercao` | **Ativo** |
+| `/GA111-IntegrarDadosMaquininhaStoneTasy` | Legado (referência) |
+| `/integracao-transacoes-tasy` | Depreciado (pode apagar) |
+| `/api-pagar-me` | Obsoleto |
 
-## 8. Homologação (quando chegar a chave Stone)
-1. Em `stone-extracao/.env`: `STONE_API_TOKEN=...` e `STONE_USE_SAMPLE=false`
-2. Em `tasy-insercao/.env`: credenciais Postgres + Oracle de homolog
-3. `docker compose up -d`
-4. Subir os dois serviços e disparar `POST /cartao/conciliation`
+## 8. Homologação
+1. `stone-extracao/.env`: `STONE_API_TOKEN`, `STONE_USE_SAMPLE=false`, `STONE_PIX_MERCHANT_ID`
+2. `tasy-insercao/.env`: Postgres + Oracle homolog
+3. Expor `/pix/webhook` publicamente (HTTPS) e cadastrar com `POST /pix/webhook/register`
+4. `docker compose up -d` + subir os dois serviços
 
-## 9. Docs úteis
-- API Conciliação Stone: https://conciliacao.stone.com.br/reference/o-que-e
+Passo a passo de testes locais: **[TESTES_LOCAIS.md](./TESTES_LOCAIS.md)**
+
+## 9. Docs
+- https://conciliacao.stone.com.br/reference/o-que-e

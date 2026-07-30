@@ -6,6 +6,7 @@ import httpx
 
 from stone_extracao.infrastructure.config.logging import get_logger
 from stone_extracao.infrastructure.config.settings import settings
+from stone_extracao.infrastructure.stone.auth import build_client_auth_headers, decode_stone_body
 
 logger = get_logger(__name__)
 
@@ -15,7 +16,7 @@ class StoneFetchError(Exception):
 
 
 class StoneConciliationClient:
-    """Adapter HTTP da API de Conciliação Stone (Cartão)."""
+    """Adapter HTTP da API de Conciliação Stone (Cartão) — Cliente Stone."""
 
     async def fetch(self, reference_date: str) -> bytes:
         if settings.STONE_USE_SAMPLE:
@@ -32,16 +33,23 @@ class StoneConciliationClient:
             f"/merchant/{settings.STONE_MERCHANT_ID}"
             f"/conciliation-file/{reference_date}"
         )
-        headers = {"Authorization": f"Bearer {settings.STONE_API_TOKEN}"}
-        logger.info("Recebido | fonte=stone_api | url=%s", url)
+        headers = build_client_auth_headers()
+        logger.info("Recebido | fonte=stone_api | url=%s | auth=Basic+x-user-type", url)
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        # Stone pode responder 307 (ex.: arquivo em storage). Seguir redirect.
+        async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
             response = await client.get(url, headers=headers)
             if response.status_code != 200:
                 raise StoneFetchError(
                     f"Stone API {response.status_code}: {response.text[:400]}"
                 )
-            return response.content
+            logger.info(
+                "Stone OK | status=%s | bytes=%s | final_url=%s",
+                response.status_code,
+                len(response.content),
+                response.url,
+            )
+            return decode_stone_body(response.content, response.headers)
 
     def _read_sample(self, reference_date: str) -> bytes:
         path = Path(settings.STONE_CARTAO_SAMPLE_PATH)
