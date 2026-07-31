@@ -1,12 +1,20 @@
 -- Dados reais já estão em seed.sql (maquininha_stone).
 -- Este arquivo fica só como referência / override local.
 --
--- Ativas (ie_status = A) usadas pelo consumer:
---   PB09243M78791  caixa 48  trans_fin 930  Cantina 1
---   PB09231S72079  caixa 48  trans_fin 930  Cantina 2
---   PB0921B473408  caixa 11  trans_fin 270  Bazar Roupas 1
---   4AJ45HT4D      caixa 12  trans_fin 269  Bazar Móveis 1
---   PB09243J71219  caixa 43  trans_fin 935  Bazar Mix 1
---   PB0921B977799  caixa 43  trans_fin 935  Bazar Mix 2
+-- Lista TI (máquina → setor) — ativas (ie_status = A):
+--   PB0921B473408  caixa 11  trans_fin 270  Roupas
+--   4AJ45HT4D      caixa 12  trans_fin 269  Móveis
+--   PB09243J71219  caixa 43  trans_fin 935  Mix
+--   PB09231S72079  caixa 48  trans_fin 930  Cantina
+--   PB09243M78791  caixa 48  trans_fin 930  Cantina
+--   PB09248T75045  caixa 11  trans_fin 270  Roupas II
+--   4AJ60KJ8H      caixa 14  trans_fin 273  Recepção     (PROVISÓRIO)
+--   4AH60NH48      caixa 13  trans_fin 272  Tmkt         (PROVISÓRIO)
+--   4AH60NL7Z      caixa 13  trans_fin 272  Tmkt         (PROVISÓRIO)
+--   PB09218373216  caixa 13  trans_fin 272  Tmkt         (PROVISÓRIO)
+--   PB09237272550  caixa 13  trans_fin 272  Tmkt         (PROVISÓRIO)
+--   PB4M258670984  caixa 13  trans_fin 272  Tmkt         (PROVISÓRIO)
+--   PB09231X75906  caixa 16  trans_fin 274  Financeiro   (PROVISÓRIO)
+--   PB0921B977799  caixa 43  trans_fin 935  Mix 2        (homolog)
 --
 -- Demais seriais Churrasco estão I (inativas) no seed.

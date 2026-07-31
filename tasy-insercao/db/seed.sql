@@ -1,8 +1,12 @@
--- Seed Cotolengo — dados reais do staging (bandeiras / tipos / mapeamento / caixas)
--- Fonte: export Postgres homolog (jul/2026)
+-- Seed Cotolengo — dados reais do staging (bandeiras / tipos / mapeamento / caixas / maquininhas)
+-- Fonte: export Postgres homolog (jul/2026) + lista TI máquina→setor (jul/2026)
 --
--- Ainda falta: maquininha_stone (serial → caixa + cd_transacao_financeira)
---   poetry run python -m tasy_insercao.db seed --file db/seed_maquininhas.example.sql
+-- Setor → cd_caixa:
+--   Roupas / Roupas II → 11 | Móveis → 12 | Tmkt → 13 | Recepção → 14
+--   Mix → 43 | Cantina → 48 | Financeiro → 16 (Caixa Central — confirmar)
+--
+-- ATENÇÃO: cd_transacao_financeira de Recepção / Tmkt / Financeiro está PROVISÓRIO
+-- (272 / 273 / 274). Confirmar no Tasy e ajustar no portal ou no seed antes de produção.
 
 -- ---------------------------------------------------------------------------
 -- Bandeiras locais (não confundir com BrandId Stone)
@@ -86,19 +90,31 @@ ON CONFLICT (cd_caixa) DO UPDATE SET
     dt_atualizacao = NOW();
 
 -- ---------------------------------------------------------------------------
--- Maquininhas (export homolog — ie_status A=ativa, I=inativa)
+-- Maquininhas (export homolog + lista TI — ie_status A=ativa, I=inativa)
 -- Consumer só usa ie_status = 'A'
 -- ---------------------------------------------------------------------------
 INSERT INTO maquininha_stone (
     nr_sequencia, nr_serie_maquininha, cd_caixa, ds_maquininha,
     ie_status, dt_registro, cd_transacao_financeira
 ) VALUES
-    (1,  'PB09243M78791', 48, 'Maquina Cantina 1',              'A', '2025-10-28 14:39:34.979527+00', 930),
-    (2,  'PB09231S72079', 48, 'Maquina  Cantina 2',             'A', '2025-10-28 14:39:34.979527+00', 930),
-    (3,  'PB0921B473408', 11, 'Maquina Bazar Roupas 1',         'A', '2025-10-29 17:16:58.528857+00', 270),
+    -- Lista TI (máquina → setor)
+    (1,  'PB09243M78791', 48, 'Cantina',                        'A', '2025-10-28 14:39:34.979527+00', 930),
+    (2,  'PB09231S72079', 48, 'Cantina',                        'A', '2025-10-28 14:39:34.979527+00', 930),
+    (3,  'PB0921B473408', 11, 'Roupas',                         'A', '2025-10-29 17:16:58.528857+00', 270),
+    (5,  '4AJ45HT4D',     12, 'Móveis',                         'A', '2025-11-21 12:04:38.555361+00', 269),
+    (6,  'PB09243J71219', 43, 'Mix',                            'A', '2025-11-26 16:48:14.598413+00', 935),
+    (24, 'PB09248T75045', 11, 'Roupas II',                      'A', NOW(), 270),
+    (25, '4AJ60KJ8H',     14, 'Recepção',                       'A', NOW(), 273),  -- PROVISÓRIO trans_fin
+    (26, '4AH60NH48',     13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
+    (27, '4AH60NL7Z',     13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
+    (28, 'PB09218373216', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
+    (29, 'PB09237272550', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
+    (30, 'PB4M258670984', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
+    (31, 'PB09231X75906', 16, 'Financeiro',                     'A', NOW(), 274),  -- PROVISÓRIO caixa/trans_fin
+    -- Homolog anterior (ainda no parque)
+    (23, 'PB0921B977799', 43, 'Mix 2',                          'A', '2025-12-08 00:11:07.657585+00', 935),
+    -- Churrasco (inativas)
     (4,  '4AJ46W38R',     15, 'Maquina Churrasco 2',            'I', '2025-11-03 14:50:54.028937+00', 271),
-    (5,  '4AJ45HT4D',     12, 'Maquina Bazar Móveis 1',         'A', '2025-11-21 12:04:38.555361+00', 269),
-    (6,  'PB09243J71219', 43, 'Maquina Bazar Mix 1',            'A', '2025-11-26 16:48:14.598413+00', 935),
     (7,  '4AJ705K47',     15, 'Maquina Churrasco 1',            'I', '2025-12-05 11:22:26.721749+00', 271),
     (8,  '4AJ10C46U',     15, 'Maquina Churrasco 3',            'I', '2025-12-05 11:34:40.6592+00',   271),
     (9,  '4AJ46RS5G',     15, 'Maquina Churrasco 4',            'I', '2025-12-05 11:35:18.956729+00', 271),
@@ -114,8 +130,7 @@ INSERT INTO maquininha_stone (
     (19, '4AJ65DJ8J',     15, 'Maquina Churrasco 14',           'I', '2025-12-05 11:40:02.487761+00', 271),
     (20, '4AJ46RL60',     15, 'Maquina Churrasco 15',           'I', '2025-12-05 11:40:27.815293+00', 271),
     (21, '4AJ46F18A',     15, 'Maquina Churrasco 16',           'I', '2025-12-05 11:42:13.14355+00',  271),
-    (22, '4AH95WC90',     15, 'Maquina Churrasco 17 ',          'I', '2025-12-05 11:44:26.877497+00', 271),
-    (23, 'PB0921B977799', 43, 'Maquina Bazar Mix 2',            'A', '2025-12-08 00:11:07.657585+00', 935)
+    (22, '4AH95WC90',     15, 'Maquina Churrasco 17',           'I', '2025-12-05 11:44:26.877497+00', 271)
 ON CONFLICT (nr_serie_maquininha) DO UPDATE SET
     cd_caixa = EXCLUDED.cd_caixa,
     ds_maquininha = EXCLUDED.ds_maquininha,

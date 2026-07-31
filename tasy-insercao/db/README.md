@@ -6,7 +6,7 @@ Arquivos:
 |---------|-----|
 | `schema.sql` | Tabelas Cotolengo (`bandeiras`, `tipos_transacoes`, mapeamento, caixas…) |
 | `seed.sql` | Dados reais de homolog (bandeiras, tipos, mapeamento Tasy, caixas) |
-| `seed_maquininhas.example.sql` | Exemplo de terminais — **ainda precisa preencher** |
+| `seed_maquininhas.example.sql` | Referência da lista máquina→setor (dados em `seed.sql`) |
 
 Models SQLAlchemy: `src/tasy_insercao/infrastructure/persistence/models.py`
 
@@ -26,7 +26,8 @@ poetry run python -m tasy_insercao.db status
 
 - Bandeiras / tipos / mapeamento Tasy  
 - Caixas (11…53)  
-- **23 maquininhas** (6 ativas `A`, resto Churrasco `I`)
+- **31 maquininhas** (14 ativas `A` da lista TI + Mix 2, resto Churrasco `I`)
+- Recepção / Tmkt / Financeiro: `cd_transacao_financeira` provisório — confirmar no Tasy
 
 Consumer só resolve terminal com `ie_status = 'A'`.
 
