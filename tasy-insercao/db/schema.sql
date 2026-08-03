@@ -61,3 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_registro_status_dt
 
 CREATE INDEX IF NOT EXISTS idx_registro_terminal_dt
     ON registro_maquininha (nr_serie_maquininha, dt_movimentacao);
+
+-- Cartão internacional (XML Stone <International>)
+ALTER TABLE registro_maquininha
+    ADD COLUMN IF NOT EXISTS ie_internacional CHAR(1);

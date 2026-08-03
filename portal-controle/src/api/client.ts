@@ -183,6 +183,7 @@ export async function reprocessarDiaApi(date: string) {
     mensagem?: string;
     stone_message?: string | null;
     raw_bytes?: number | null;
+    parse_stats?: Record<string, unknown>;
     totais_avisos?: string[];
   }>("/api/reprocessar/dia", {
     method: "POST",

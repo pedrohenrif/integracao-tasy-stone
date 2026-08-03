@@ -57,6 +57,7 @@ export function RegistrosTable({
             <th>Serial</th>
             <th>Tipo</th>
             <th>Bandeira</th>
+            <th>Internac.</th>
             <th>Valor</th>
             <th>Dt mov.</th>
             <th>Obs</th>
@@ -97,6 +98,13 @@ export function RegistrosTable({
                 <td>{r.nr_serie_maquininha}</td>
                 <td>{r.cd_tipo_transacao || "-"}</td>
                 <td>{r.cd_bandeira || "-"}</td>
+                <td>
+                  {r.ie_internacional === "S"
+                    ? "Sim"
+                    : r.ie_internacional === "N"
+                      ? "Não"
+                      : "-"}
+                </td>
                 <td className="num">{money(Number(r.vl_transacao || 0))}</td>
                 <td>{r.dt_movimentacao}</td>
                 <td className="obs">{r.ds_obs_processo || ""}</td>

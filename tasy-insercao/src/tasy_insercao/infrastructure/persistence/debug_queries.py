@@ -22,6 +22,7 @@ class FiltrosPainel:
     nr_serie: str | None = None
     cd_autorizacao: str | None = None
     cd_bandeira: str | None = None
+    ie_internacional: str | None = None  # S | N
     vl_min: Decimal | None = None
     vl_max: Decimal | None = None
     obs: str | None = None
@@ -71,8 +72,18 @@ def _where(f: FiltrosPainel) -> tuple[str, dict[str, Any]]:
         clauses.append("r.cd_autorizacao ILIKE %(cd_autorizacao)s")
         params["cd_autorizacao"] = f"%{f.cd_autorizacao.strip()}%"
     if f.cd_bandeira:
-        clauses.append("LOWER(COALESCE(r.cd_bandeira, '')) LIKE %(cd_bandeira)s")
-        params["cd_bandeira"] = f"%{f.cd_bandeira.strip().lower()}%"
+        bandeira = f.cd_bandeira.strip().lower()
+        # Transição: BrandId 171 era gravado como "ticket" (bug); Elo filtra os dois
+        if bandeira == "elo":
+            clauses.append("LOWER(COALESCE(r.cd_bandeira, '')) IN ('elo', 'ticket')")
+        else:
+            clauses.append("LOWER(COALESCE(r.cd_bandeira, '')) LIKE %(cd_bandeira)s")
+            params["cd_bandeira"] = f"%{bandeira}%"
+    if f.ie_internacional:
+        intl = f.ie_internacional.strip().upper()
+        if intl in ("S", "N"):
+            clauses.append("UPPER(COALESCE(r.ie_internacional, '')) = %(ie_internacional)s")
+            params["ie_internacional"] = intl
     if f.vl_min is not None:
         clauses.append("r.vl_transacao >= %(vl_min)s")
         params["vl_min"] = f.vl_min
@@ -162,6 +173,7 @@ _REGISTRO_COLS = """
     r.cd_bandeira,
     r.qt_parcelas,
     r.ie_transacao_parcelada,
+    r.ie_internacional,
     r.cd_status,
     r.ds_obs_processo,
     r.dt_inclusao,

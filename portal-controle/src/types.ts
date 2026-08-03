@@ -28,6 +28,7 @@ export type Registro = {
   cd_tipo_transacao: string | null;
   cd_bandeira: string | null;
   qt_parcelas: number;
+  ie_internacional?: string | null;
   cd_status: number;
   ds_obs_processo: string | null;
   dt_atualizacao: string;
@@ -54,6 +55,7 @@ export type Filtros = {
   nr_serie?: string;
   autorizacao?: string;
   bandeira?: string;
+  ie_internacional?: string;
   vl_min?: string;
   vl_max?: string;
   obs?: string;

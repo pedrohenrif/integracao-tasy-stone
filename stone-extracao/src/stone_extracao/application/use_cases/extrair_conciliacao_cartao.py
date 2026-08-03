@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from stone_extracao.domain.cartao.models import EventoFilaCartao, TransacaoCartao
 from stone_extracao.domain.cartao.ports import (
@@ -26,6 +27,7 @@ class ExtracaoResultado:
     totais_avisos: list[str] | None = None
     message: str | None = None
     raw_bytes: int | None = None
+    parse_stats: dict[str, Any] = field(default_factory=dict)
 
 
 class ExtrairConciliacaoCartao:
@@ -46,14 +48,41 @@ class ExtrairConciliacaoCartao:
         raw_bytes = len(raw)
         logger.info("Recebido | cartao | date=%s | bytes=%s", reference_date, raw_bytes)
 
-        transactions = self.parser.parse(raw)
-        logger.info("Parseado | cartao | date=%s | count=%s", reference_date, len(transactions))
+        parse_stats: dict[str, Any] = {}
+        parse_with_stats = getattr(self.parser, "parse_with_stats", None)
+        if callable(parse_with_stats):
+            parsed = parse_with_stats(raw)
+            transactions = parsed.transactions
+            stats = parsed.stats
+            parse_stats = {
+                "has_financial_section": stats.has_financial_section,
+                "transactions_total": stats.transactions_total,
+                "accepted": stats.accepted,
+                "skipped_no_capture": stats.skipped_no_capture,
+                "skipped_no_id": stats.skipped_no_id,
+                "skipped_no_amount": stats.skipped_no_amount,
+                "skipped_no_date": stats.skipped_no_date,
+                "international_true": stats.international_true,
+                "international_false": stats.international_false,
+                "stone_code": stats.stone_code,
+                "reference_date": stats.reference_date,
+                "summary": stats.summary(),
+            }
+            logger.info("Parseado | cartao | date=%s | %s", reference_date, stats.summary())
+        else:
+            transactions = self.parser.parse(raw)
+            logger.info(
+                "Parseado | cartao | date=%s | count=%s",
+                reference_date,
+                len(transactions),
+            )
+
         if not transactions:
             logger.warning(
-                "Nenhuma transação parseada | cartao | date=%s | bytes=%s | "
-                "verifique StoneCode/data no portal Stone ou XML sem FinancialTransactions",
+                "Nenhuma transação parseada | cartao | date=%s | bytes=%s | stats=%s",
                 reference_date,
                 raw_bytes,
+                parse_stats.get("summary") or "(sem stats)",
             )
 
         totais = analyze_cartao_totais(raw, transactions)
@@ -92,11 +121,20 @@ class ExtrairConciliacaoCartao:
         source = "sample" if settings.STONE_USE_SAMPLE else "stone_api"
         message = None
         if not transactions:
-            message = (
-                f"Stone retornou arquivo sem transações parseáveis "
-                f"(date={reference_date}, bytes={raw_bytes}). "
-                "Confira StoneCode/merchant e a data no portal Stone."
-            )
+            detail = parse_stats.get("summary") or "sem FinancialTransactions/Captures"
+            skipped_cap = parse_stats.get("skipped_no_capture")
+            total_xml = parse_stats.get("transactions_total")
+            if total_xml and skipped_cap and skipped_cap == total_xml:
+                message = (
+                    f"Arquivo Stone OK ({raw_bytes} bytes) com {total_xml} transação(ões) no XML, "
+                    f"mas nenhuma com Captures>=1 (só liquidação/cancelamento/etc.). "
+                    f"Integração Tasy usa apenas capturas. | {detail}"
+                )
+            else:
+                message = (
+                    f"Stone retornou arquivo sem transações parseáveis "
+                    f"(date={reference_date}, bytes={raw_bytes}). {detail}"
+                )
         return ExtracaoResultado(
             reference_date=reference_date,
             source=source,
@@ -107,4 +145,5 @@ class ExtrairConciliacaoCartao:
             totais_avisos=list(totais.avisos),
             message=message,
             raw_bytes=raw_bytes,
+            parse_stats=parse_stats,
         )

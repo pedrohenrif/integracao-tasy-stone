@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -15,6 +16,40 @@ _ACCOUNT_TYPE_MAP: dict[int, TipoTransacaoCartao] = {
     3: TipoTransacaoCartao.PREPAID_DEBIT,
     4: TipoTransacaoCartao.PREPAID_DEBIT,
 }
+
+
+@dataclass
+class ParseCartaoStats:
+    """Diagnóstico do parse — explica dias com arquivo grande e 0 txs publicadas."""
+
+    has_financial_section: bool = False
+    transactions_total: int = 0
+    accepted: int = 0
+    skipped_no_capture: int = 0
+    skipped_no_id: int = 0
+    skipped_no_amount: int = 0
+    skipped_no_date: int = 0
+    international_true: int = 0
+    international_false: int = 0
+    stone_code: str | None = None
+    reference_date: str | None = None
+
+    def summary(self) -> str:
+        if not self.has_financial_section:
+            return "XML sem seção FinancialTransactions"
+        return (
+            f"txs_xml={self.transactions_total} | aceitas(Captures>=1)={self.accepted} | "
+            f"sem_capture={self.skipped_no_capture} | sem_id={self.skipped_no_id} | "
+            f"sem_valor={self.skipped_no_amount} | sem_data={self.skipped_no_date} | "
+            f"intl_sim={self.international_true} | intl_nao={self.international_false}"
+            + (f" | StoneCode={self.stone_code}" if self.stone_code else "")
+        )
+
+
+@dataclass
+class ParseCartaoResult:
+    transactions: list[TransacaoCartao] = field(default_factory=list)
+    stats: ParseCartaoStats = field(default_factory=ParseCartaoStats)
 
 
 def _local(tag: str) -> str:
@@ -57,6 +92,17 @@ def _parse_decimal(value: str | None) -> Decimal | None:
         return None
 
 
+def _parse_bool_stone(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    v = value.strip().lower()
+    if v in ("true", "1", "s", "sim", "yes"):
+        return True
+    if v in ("false", "0", "n", "nao", "não", "no"):
+        return False
+    return None
+
+
 def _map_account_type(raw: str | None) -> tuple[int | None, TipoTransacaoCartao]:
     if raw is None:
         return None, TipoTransacaoCartao.UNKNOWN
@@ -96,24 +142,29 @@ def _parse_transaction(
     *,
     stone_code: str | None,
     reference_date: str | None,
+    stats: ParseCartaoStats,
 ) -> TransacaoCartao | None:
     if not _has_capture(tx):
+        stats.skipped_no_capture += 1
         return None
 
     id_stone = _find_text(tx, "AcquirerTransactionKey")
     if not id_stone:
+        stats.skipped_no_id += 1
         return None
 
     amount = _parse_decimal(_find_text(tx, "CapturedAmount"))
     if amount is None:
         amount = _parse_decimal(_find_text(tx, "AuthorizedAmount"))
     if amount is None:
+        stats.skipped_no_amount += 1
         return None
 
     dt_mov = _parse_stone_datetime(_find_text(tx, "CaptureLocalDateTime"))
     if dt_mov is None:
         dt_mov = _parse_stone_datetime(_find_text(tx, "AuthorizationDateTime"))
     if dt_mov is None:
+        stats.skipped_no_date += 1
         return None
 
     parcelas_raw = _find_text(tx, "NumberOfInstallments", "1") or "1"
@@ -123,6 +174,11 @@ def _parse_transaction(
         qt_parcelas = 1
 
     account_type, tipo = _map_account_type(_find_text(tx, "AccountType"))
+    ie_internacional = _parse_bool_stone(_find_text(tx, "International"))
+    if ie_internacional is True:
+        stats.international_true += 1
+    elif ie_internacional is False:
+        stats.international_false += 1
 
     return TransacaoCartao(
         id_stone=id_stone,
@@ -138,11 +194,12 @@ def _parse_transaction(
         initiator_transaction_key=_find_text(tx, "InitiatorTransactionKey"),
         stone_code=stone_code,
         reference_date=reference_date,
+        ie_internacional=ie_internacional,
     )
 
 
-def parse_cartao_xml(content: str | bytes) -> list[TransacaoCartao]:
-    """Parseia XML Conciliation Layout 2.2 e retorna apenas transações capturadas."""
+def parse_cartao_xml_with_stats(content: str | bytes) -> ParseCartaoResult:
+    """Parseia XML Conciliation Layout 2.2 e retorna txs + diagnóstico."""
     if isinstance(content, bytes):
         content = content.decode("utf-8")
 
@@ -150,23 +207,33 @@ def parse_cartao_xml(content: str | bytes) -> list[TransacaoCartao]:
     header = _find_child(root, "Header")
     stone_code = _find_text(header, "StoneCode") if header is not None else None
     reference_date = _find_text(header, "ReferenceDate") if header is not None else None
+    stats = ParseCartaoStats(stone_code=stone_code, reference_date=reference_date)
 
     financial = _find_child(root, "FinancialTransactions")
     if financial is None:
-        return []
+        return ParseCartaoResult(transactions=[], stats=stats)
 
+    stats.has_financial_section = True
     result: list[TransacaoCartao] = []
     for child in financial:
         if _local(child.tag) != "Transaction":
             continue
+        stats.transactions_total += 1
         parsed = _parse_transaction(
             child,
             stone_code=stone_code,
             reference_date=reference_date,
+            stats=stats,
         )
         if parsed is not None:
+            stats.accepted += 1
             result.append(parsed)
-    return result
+    return ParseCartaoResult(transactions=result, stats=stats)
+
+
+def parse_cartao_xml(content: str | bytes) -> list[TransacaoCartao]:
+    """Parseia XML Conciliation Layout 2.2 e retorna apenas transações capturadas."""
+    return parse_cartao_xml_with_stats(content).transactions
 
 
 def parse_cartao_xml_file(path: str | Path) -> list[TransacaoCartao]:

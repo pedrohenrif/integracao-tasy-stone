@@ -168,11 +168,18 @@ class StagingPostgresRepository:
             "cd_bandeira": (map_stone_brand(tx.cd_bandeira) if tx.cd_bandeira else None),
             "qt_parcelas": tx.qt_parcelas,
             "ie_transacao_parcelada": "S" if (tx.ie_transacao_parcelada or tx.qt_parcelas > 1) else "N",
+            "ie_internacional": (
+                "S"
+                if getattr(tx, "ie_internacional", None) is True
+                else "N"
+                if getattr(tx, "ie_internacional", None) is False
+                else None
+            ),
             "cd_status": status,
             "ds_obs_processo": obs[:500],
         }
         try:
-            row = self.db.execute_returning(pg.INSERT_REGISTRO_MAQUININHA, params)
+            row = self.db.execute_returning(pg.UPSERT_REGISTRO_MAQUININHA, params)
             return row[0] if row else None
         except Exception as exc:
             logger.warning("Insert staging falhou (%s); update por id_stone", exc)

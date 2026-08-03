@@ -78,6 +78,17 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
         </select>
       </label>
       <label>
+        Internacional
+        <select
+          value={value.ie_internacional || ""}
+          onChange={(e) => set("ie_internacional", e.target.value)}
+        >
+          <option value="">Todos</option>
+          <option value="S">Sim</option>
+          <option value="N">Não</option>
+        </select>
+      </label>
+      <label>
         ID Stone
         <input value={value.id_stone || ""} onChange={(e) => set("id_stone", e.target.value)} placeholder="parcial" />
       </label>

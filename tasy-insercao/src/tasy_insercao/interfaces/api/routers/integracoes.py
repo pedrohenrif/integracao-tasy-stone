@@ -52,6 +52,7 @@ def _filtros_from_query(
     nr_serie: str | None,
     autorizacao: str | None,
     bandeira: str | None,
+    ie_internacional: str | None,
     vl_min: str | None,
     vl_max: str | None,
     obs: str | None,
@@ -68,6 +69,7 @@ def _filtros_from_query(
         nr_serie=nr_serie or None,
         cd_autorizacao=autorizacao or None,
         cd_bandeira=bandeira or None,
+        ie_internacional=ie_internacional or None,
         vl_min=_parse_decimal(vl_min),
         vl_max=_parse_decimal(vl_max),
         obs=obs or None,
@@ -110,6 +112,7 @@ async def api_registros(
     nr_serie: str | None = None,
     autorizacao: str | None = None,
     bandeira: str | None = None,
+    ie_internacional: str | None = None,
     vl_min: str | None = None,
     vl_max: str | None = None,
     obs: str | None = None,
@@ -118,7 +121,7 @@ async def api_registros(
 ):
     f = _filtros_from_query(
         data_de, data_ate, cd_caixa, cd_status, tipo, id_stone, nr_serie,
-        autorizacao, bandeira, vl_min, vl_max, obs, limit, offset,
+        autorizacao, bandeira, ie_internacional, vl_min, vl_max, obs, limit, offset,
     )
     try:
         rows = listar_registros(f)

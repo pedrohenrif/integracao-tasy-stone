@@ -339,6 +339,7 @@ async def reprocessar_dia(
             "published_count": published,
             "raw_bytes": body.get("raw_bytes"),
             "message": stone_msg,
+            "parse_stats": body.get("parse_stats"),
         },
         obs=obs[:500],
     )
@@ -358,6 +359,7 @@ async def reprocessar_dia(
         "mode": body.get("mode"),
         "raw_bytes": body.get("raw_bytes"),
         "stone_message": stone_msg,
+        "parse_stats": body.get("parse_stats") or {},
         "totais_avisos": body.get("totais_avisos") or [],
         "stone_extracao_url": url,
         "mensagem": mensagem,

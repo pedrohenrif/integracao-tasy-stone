@@ -29,6 +29,7 @@ class TransacaoCartao(BaseModel):
     initiator_transaction_key: str | None = None
     stone_code: str | None = None
     reference_date: str | None = None
+    ie_internacional: bool | None = None
 
 
 class EventoFilaCartao(BaseModel):

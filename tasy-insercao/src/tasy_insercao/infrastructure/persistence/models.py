@@ -89,6 +89,7 @@ class RegistroMaquininha(Base):
     cd_bandeira: Mapped[str | None] = mapped_column(String(40))
     qt_parcelas: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     ie_transacao_parcelada: Mapped[str] = mapped_column(CHAR(1), nullable=False, default="N")
+    ie_internacional: Mapped[str | None] = mapped_column(CHAR(1))  # S/N (Stone International)
     cd_status: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     ds_obs_processo: Mapped[str | None] = mapped_column(String(500))
     dt_inclusao: Mapped[datetime] = mapped_column(

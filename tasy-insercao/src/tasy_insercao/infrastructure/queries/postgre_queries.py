@@ -59,6 +59,7 @@ INSERT INTO registro_maquininha (
     cd_bandeira,
     qt_parcelas,
     ie_transacao_parcelada,
+    ie_internacional,
     cd_status,
     ds_obs_processo
 ) VALUES (
@@ -72,6 +73,7 @@ INSERT INTO registro_maquininha (
     %(cd_bandeira)s,
     %(qt_parcelas)s,
     %(ie_transacao_parcelada)s,
+    %(ie_internacional)s,
     %(cd_status)s,
     %(ds_obs_processo)s
 )
@@ -84,7 +86,8 @@ ON CONFLICT (id_stone) DO UPDATE SET
     cd_tipo_transacao = EXCLUDED.cd_tipo_transacao,
     cd_bandeira = EXCLUDED.cd_bandeira,
     qt_parcelas = EXCLUDED.qt_parcelas,
-    ie_transacao_parcelada = EXCLUDED.ie_transacao_parcelada
+    ie_transacao_parcelada = EXCLUDED.ie_transacao_parcelada,
+    ie_internacional = EXCLUDED.ie_internacional
 WHERE registro_maquininha.cd_status NOT IN (5)
 RETURNING nr_sequencia, cd_status
 """
@@ -102,6 +105,7 @@ INSERT INTO registro_maquininha (
     cd_bandeira,
     qt_parcelas,
     ie_transacao_parcelada,
+    ie_internacional,
     cd_status,
     ds_obs_processo
 ) VALUES (
@@ -115,6 +119,7 @@ INSERT INTO registro_maquininha (
     %(cd_bandeira)s,
     %(qt_parcelas)s,
     %(ie_transacao_parcelada)s,
+    %(ie_internacional)s,
     %(cd_status)s,
     %(ds_obs_processo)s
 )
