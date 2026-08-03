@@ -29,3 +29,6 @@ Thumbs.db
 # Logs / temp
 *.log
 Logs/
+
+# Backup XML Stone (VM / local) — não versionar
+**/data/xml_backup/

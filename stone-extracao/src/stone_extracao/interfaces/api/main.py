@@ -111,6 +111,7 @@ class ConciliationResponse(BaseModel):
     raw_bytes: int | None = None
     totais_avisos: list[str] = Field(default_factory=list)
     parse_stats: dict = Field(default_factory=dict)
+    xml_backup_path: str | None = None
 
 
 class PixRequestResponse(BaseModel):
@@ -164,6 +165,7 @@ def _to_response(result: ExtracaoResultado, *, mode: str) -> ConciliationRespons
         raw_bytes=result.raw_bytes,
         totais_avisos=list(result.totais_avisos or []),
         parse_stats=dict(result.parse_stats or {}),
+        xml_backup_path=result.xml_backup_path,
     )
 
 

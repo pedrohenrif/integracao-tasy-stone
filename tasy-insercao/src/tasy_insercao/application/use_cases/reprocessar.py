@@ -360,6 +360,7 @@ async def reprocessar_dia(
         "raw_bytes": body.get("raw_bytes"),
         "stone_message": stone_msg,
         "parse_stats": body.get("parse_stats") or {},
+        "xml_backup_path": body.get("xml_backup_path"),
         "totais_avisos": body.get("totais_avisos") or [],
         "stone_extracao_url": url,
         "mensagem": mensagem,

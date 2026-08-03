@@ -12,6 +12,7 @@ from stone_extracao.domain.cartao.ports import (
 )
 from stone_extracao.infrastructure.config.logging import get_logger
 from stone_extracao.infrastructure.parsers.cartao_totais import analyze_cartao_totais
+from stone_extracao.infrastructure.store.xml_backup import save_cartao_xml_backup
 
 logger = get_logger(__name__)
 
@@ -28,6 +29,7 @@ class ExtracaoResultado:
     message: str | None = None
     raw_bytes: int | None = None
     parse_stats: dict[str, Any] = field(default_factory=dict)
+    xml_backup_path: str | None = None
 
 
 class ExtrairConciliacaoCartao:
@@ -48,6 +50,7 @@ class ExtrairConciliacaoCartao:
         raw_bytes = len(raw)
         logger.info("Recebido | cartao | date=%s | bytes=%s", reference_date, raw_bytes)
 
+        backup_path: str | None = None
         parse_stats: dict[str, Any] = {}
         parse_with_stats = getattr(self.parser, "parse_with_stats", None)
         if callable(parse_with_stats):
@@ -79,25 +82,27 @@ class ExtrairConciliacaoCartao:
                 len(transactions),
             )
 
+        tag = "ok" if transactions else "vazio"
+        try:
+            saved = save_cartao_xml_backup(
+                raw,
+                reference_date=reference_date,
+                tag=tag,
+            )
+            if saved:
+                backup_path = str(saved.path)
+                parse_stats["xml_backup_path"] = backup_path
+        except Exception as dump_exc:
+            logger.warning("Backup XML falhou | date=%s | %s", reference_date, dump_exc)
+
         if not transactions:
             logger.warning(
-                "Nenhuma transação parseada | cartao | date=%s | bytes=%s | stats=%s",
+                "Nenhuma transação parseada | cartao | date=%s | bytes=%s | stats=%s | backup=%s",
                 reference_date,
                 raw_bytes,
                 parse_stats.get("summary") or "(sem stats)",
+                backup_path or "-",
             )
-            # Salva amostra do XML para análise (VM: pasta do serviço)
-            try:
-                from pathlib import Path
-
-                dump_dir = Path("logs")
-                dump_dir.mkdir(parents=True, exist_ok=True)
-                dump_path = dump_dir / f"stone_cartao_{reference_date}_vazio.xml"
-                dump_path.write_bytes(raw if isinstance(raw, bytes) else raw.encode("utf-8"))
-                logger.warning("XML vazio salvo em %s", dump_path.resolve())
-                parse_stats["xml_dump"] = str(dump_path.resolve())
-            except Exception as dump_exc:
-                logger.warning("Não foi possível salvar XML dump: %s", dump_exc)
 
         totais = analyze_cartao_totais(raw, transactions)
         for aviso in totais.avisos:
@@ -149,6 +154,8 @@ class ExtrairConciliacaoCartao:
                     f"Stone retornou arquivo sem transações parseáveis "
                     f"(date={reference_date}, bytes={raw_bytes}). {detail}"
                 )
+            if backup_path:
+                message = f"{message} | backup={backup_path}"
         return ExtracaoResultado(
             reference_date=reference_date,
             source=source,
@@ -160,4 +167,5 @@ class ExtrairConciliacaoCartao:
             message=message,
             raw_bytes=raw_bytes,
             parse_stats=parse_stats,
+            xml_backup_path=backup_path,
         )

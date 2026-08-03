@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Webhook PIX (opcional: header de validação quando Stone fornecer)
     PIX_WEBHOOK_SECRET: str = ""
 
+    # Backup físico do XML de cartão (VM) — útil para auditoria / dia sem captura
+    STONE_XML_BACKUP_ENABLED: bool = True
+    STONE_XML_BACKUP_DIR: str = "data/xml_backup"
+
     # Rotina diária cartão D-1 (sempre o dia anterior, fuso Brasil)
     # Em prod/homolog: true + uvicorn SEM --reload (evita job duplicado)
     # Horário via .env: CARTAO_CRON_HOUR (0-23) + CARTAO_CRON_MINUTE (0-59)
