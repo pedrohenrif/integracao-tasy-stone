@@ -1,114 +1,126 @@
 # Deploy VM Windows (Cotolengo)
 
-Guia rápido para clonar e subir na VM do cliente (`10.1.1.190` / subdomínio interno).
+Guia para clonar e subir na VM (`10.1.1.190` / `https://stone.pequenocotolengo.org.br`).
 
 ## Pré-requisitos na VM
 
-- Git
-- Python 3.10+
-- [Poetry](https://python-poetry.org/)
-- Node.js 20+ (só para build do portal)
-- Docker Desktop (RabbitMQ)
-- PostgreSQL (local na VM)
-- Acesso Oracle homolog (VPN/rede, se necessário)
-- Firewall liberando portas internas: `80/443` (portal), opcional `8000/8001`
+- Git, Python 3.10+, [Poetry](https://python-poetry.org/), Node.js 20+
+- PostgreSQL local
+- **RabbitMQ nativo** (Docker Desktop costuma falhar sem nested virtualization)
+- [NSSM](https://nssm.cc/download) — serviços Windows sem terminal
+- Firewall: `80/443` (portal), opcional `8000/8001/5173`
 
-> IP `10.x` é interno: o **portal** funciona na rede do hospital.  
-> Webhook PIX da Stone (internet) só funciona com IP público/NAT **ou** Cloudflare Tunnel.
+> IP `10.x` é interno: portal na rede do hospital.  
+> Webhook PIX da Stone (internet) só com HTTPS público (NAT/proxy/Tunnel).
 
 ## 1) Clonar
 
 ```powershell
-cd C:\apps   # ou pasta combinada com o TI
-git clone https://github.com/pedrohenrif/integracao-tasy-stone.git Maq_Stone
-cd Maq_Stone
+cd C:\GHR_Tech
+git clone https://github.com/pedrohenrif/integracao-tasy-stone.git integracao-tasy-stone
+cd integracao-tasy-stone
 ```
 
-## 2) RabbitMQ
+## 2) RabbitMQ (nativo — recomendado na VM)
+
+1. Instalar **Erlang OTP 27.x** (não usar 28/29 com RabbitMQ 4.3).
+2. Instalar RabbitMQ Server Windows.
+3. Serviço automático + usuário:
 
 ```powershell
-docker compose up -d
-docker compose ps
+cd "C:\Program Files\RabbitMQ Server\rabbitmq_server-*\sbin"
+.\rabbitmq-plugins.bat enable rabbitmq_management
+.\rabbitmq-service.bat install
+.\rabbitmq-service.bat start
+Set-Service RabbitMQ -StartupType Automatic
+
+# Se rabbitmqctl falhar por cookie: copiar
+#   %WINDIR%\System32\config\systemprofile\.erlang.cookie
+# para %USERPROFILE%\.erlang.cookie e %APPDATA%\RabbitMQ\.erlang.cookie
+
+.\rabbitmqctl.bat add_user stone stone
+.\rabbitmqctl.bat set_user_tags stone administrator
+.\rabbitmqctl.bat set_permissions -p / stone ".*" ".*" ".*"
 ```
 
-- AMQP: `localhost:5673`
-- UI: http://localhost:15673 (`stone` / `stone`)
+- AMQP: `localhost:5672`
+- UI: http://localhost:15672 (`stone` / `stone`)
 
-## 3) Postgres + schema
+Nos `.env` use portas **5672 / 15672** (não 5673 do Docker).
 
-1. Crie um banco (ex.: `maquina_stone`) e usuário.
-2. Copie envs:
+## 3) Postgres + .env + seed
 
 ```powershell
 copy stone-extracao\.env.example stone-extracao\.env
 copy tasy-insercao\.env.example tasy-insercao\.env
-copy portal-controle\.env.example portal-controle\.env   # se existir
 ```
 
-3. Preencha `tasy-insercao\.env` (Postgres, Oracle, Rabbit, `STONE_EXTRACAO_BASE_URL=http://127.0.0.1:8000`, `PORTAL_CORS_ORIGINS` com a URL do portal na rede).
-4. Preencha `stone-extracao\.env` (`STONE_API_TOKEN`, merchants, `STONE_USE_SAMPLE=false`).
+Preencher Postgres, Oracle, `STONE_API_TOKEN`, CORS com o subdomínio:
+
+```env
+RABBITMQ_URL=amqp://stone:stone@localhost:5672/
+RABBITMQ_MGMT_URL=http://localhost:15672
+PORTAL_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://10.1.1.190:5173,https://stone.pequenocotolengo.org.br
+STONE_EXTRACAO_BASE_URL=http://127.0.0.1:8000
+```
 
 ```powershell
 cd tasy-insercao
 poetry install
-poetry run python -m tasy_insercao.db schema
-poetry run python -m tasy_insercao.db seed   # se disponível / necessário
-```
+poetry run python -m tasy_insercao.db up
+poetry run python -m tasy_insercao.db status
 
-## 4) Serviços (3 terminais ou NSSM/Task Scheduler)
-
-**stone-extracao (producer + webhook + cron)**
-
-```powershell
-cd stone-extracao
+cd ..\stone-extracao
 poetry install
-poetry run uvicorn stone_extracao.interfaces.api.main:app --host 0.0.0.0 --port 8000
-```
 
-**tasy-insercao (consumer)**
-
-```powershell
-cd tasy-insercao
-poetry run python -m tasy_insercao
-```
-
-**portal API**
-
-```powershell
-cd tasy-insercao
-poetry run python -m tasy_insercao.painel
-# escuta :8001
-```
-
-## 5) Portal React (acesso na rede)
-
-```powershell
-cd portal-controle
+cd ..\portal-controle
 npm install
 npm run build
 ```
 
-Sirva a pasta `dist` com IIS/Nginx/Caddy **ou**:
+## 4) Serviços Windows (NSSM — sobe no boot, sem terminal)
+
+1. Baixe NSSM → extraia em `C:\Tools\nssm` (use `win64\nssm.exe`).
+2. PowerShell **Admin**:
 
 ```powershell
-npm run preview -- --host 0.0.0.0 --port 5173
+cd C:\GHR_Tech\integracao-tasy-stone
+.\deploy\windows\install-services.ps1
 ```
 
-Proxy sugerido no subdomínio:
-- `/` → portal estático (ou :5173)
-- `/api` e `/health` → `http://127.0.0.1:8001`
-- `/pix` e `/cartao` e `/scheduler` → `http://127.0.0.1:8000` (webhook PIX)
+Serviços criados (Auto Start):
 
-Ajuste `VITE_API_URL` / CORS se o front chamar a API por URL absoluta.
+| Serviço        | Função              | Porta |
+|----------------|---------------------|-------|
+| `StoneExtracao`| API + webhook + cron| 8000  |
+| `TasyConsumer` | Consumer Rabbit→Tasy | —   |
+| `TasyPainel`   | API do portal       | 8001  |
+| `StonePortal`  | Front estático      | 5173  |
 
-## 6) Checklist pós-subida
+Logs: `deploy\windows\logs\`
 
-- [ ] http://VM:8000/health
-- [ ] http://VM:8001/health
-- [ ] Login portal (`admin` / senha do `.env`)
-- [ ] Scheduler (admin) — ativar quando for usar cron D-1
-- [ ] `POST /cartao/conciliation/d-1` smoke
-- [ ] PIX: só após HTTPS público + `POST /pix/webhook/register`
+```powershell
+Get-Service StoneExtracao, TasyConsumer, TasyPainel, StonePortal
+# reiniciar um:
+Restart-Service StoneExtracao
+# remover todos:
+.\deploy\windows\uninstall-services.ps1
+```
+
+## 5) Proxy do subdomínio (TI)
+
+- `/` → portal (`:5173` ou IIS apontando para `portal-controle\dist`)
+- `/api`, `/health` → `http://127.0.0.1:8001`
+- `/pix`, `/cartao`, `/scheduler` → `http://127.0.0.1:8000`
+
+## 6) Checklist
+
+- [ ] http://127.0.0.1:8000/health
+- [ ] http://127.0.0.1:8001/health
+- [ ] http://127.0.0.1:5173 (login portal)
+- [ ] Reiniciar VM e conferir se os 4 serviços + RabbitMQ voltam sozinhos
+- [ ] Scheduler cartão (admin) quando for usar D-1
+- [ ] PIX webhook só após HTTPS público + register
 
 ## Credenciais
 
