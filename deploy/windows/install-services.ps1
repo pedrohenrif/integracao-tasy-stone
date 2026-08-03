@@ -18,11 +18,14 @@ function Find-Nssm {
     if ($cmd) { return $cmd.Source }
     foreach ($c in @(
         "C:\Tools\nssm\win64\nssm.exe",
+        "C:\Tools\nssm\nssm-2.24\win64\nssm.exe",
         "C:\nssm\win64\nssm.exe",
         "C:\Program Files\nssm\win64\nssm.exe"
     )) {
         if (Test-Path $c) { return $c }
     }
+    $nested = Get-ChildItem "C:\Tools\nssm\nssm-*\win64\nssm.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($nested) { return $nested.FullName }
     throw "NSSM não encontrado. Baixe https://nssm.cc/download , extraia em C:\Tools\nssm e rode de novo (ou passe -NssmPath)."
 }
 
