@@ -66,6 +66,8 @@ class ExtrairConciliacaoCartao:
                 "international_false": stats.international_false,
                 "stone_code": stats.stone_code,
                 "reference_date": stats.reference_date,
+                "layout_version": stats.layout_version,
+                "root_sections": dict(stats.root_sections),
                 "summary": stats.summary(),
             }
             logger.info("Parseado | cartao | date=%s | %s", reference_date, stats.summary())
@@ -84,6 +86,18 @@ class ExtrairConciliacaoCartao:
                 raw_bytes,
                 parse_stats.get("summary") or "(sem stats)",
             )
+            # Salva amostra do XML para análise (VM: pasta do serviço)
+            try:
+                from pathlib import Path
+
+                dump_dir = Path("logs")
+                dump_dir.mkdir(parents=True, exist_ok=True)
+                dump_path = dump_dir / f"stone_cartao_{reference_date}_vazio.xml"
+                dump_path.write_bytes(raw if isinstance(raw, bytes) else raw.encode("utf-8"))
+                logger.warning("XML vazio salvo em %s", dump_path.resolve())
+                parse_stats["xml_dump"] = str(dump_path.resolve())
+            except Exception as dump_exc:
+                logger.warning("Não foi possível salvar XML dump: %s", dump_exc)
 
         totais = analyze_cartao_totais(raw, transactions)
         for aviso in totais.avisos:

@@ -33,17 +33,28 @@ class ParseCartaoStats:
     international_false: int = 0
     stone_code: str | None = None
     reference_date: str | None = None
+    root_sections: dict[str, int] = field(default_factory=dict)
+    layout_version: str | None = None
 
     def summary(self) -> str:
-        if not self.has_financial_section:
-            return "XML sem seção FinancialTransactions"
-        return (
+        sections = ",".join(f"{k}:{v}" for k, v in sorted(self.root_sections.items())) or "-"
+        base = (
             f"txs_xml={self.transactions_total} | aceitas(Captures>=1)={self.accepted} | "
             f"sem_capture={self.skipped_no_capture} | sem_id={self.skipped_no_id} | "
             f"sem_valor={self.skipped_no_amount} | sem_data={self.skipped_no_date} | "
             f"intl_sim={self.international_true} | intl_nao={self.international_false}"
             + (f" | StoneCode={self.stone_code}" if self.stone_code else "")
+            + (f" | layout={self.layout_version}" if self.layout_version else "")
+            + f" | secoes=[{sections}]"
         )
+        if not self.has_financial_section:
+            return f"XML sem seção FinancialTransactions | {base}"
+        if self.transactions_total == 0:
+            return (
+                f"FinancialTransactions vazio (sem <Transaction>) — "
+                f"arquivo pode ter só Payments/eventos de liquidação | {base}"
+            )
+        return base
 
 
 @dataclass
@@ -207,7 +218,22 @@ def parse_cartao_xml_with_stats(content: str | bytes) -> ParseCartaoResult:
     header = _find_child(root, "Header")
     stone_code = _find_text(header, "StoneCode") if header is not None else None
     reference_date = _find_text(header, "ReferenceDate") if header is not None else None
-    stats = ParseCartaoStats(stone_code=stone_code, reference_date=reference_date)
+    layout_version = _find_text(header, "LayoutVersion") if header is not None else None
+    stats = ParseCartaoStats(
+        stone_code=stone_code,
+        reference_date=reference_date,
+        layout_version=layout_version,
+    )
+
+    # Conta seções do extrato (Payments, FinancialEvents, etc.)
+    for child in root:
+        name = _local(child.tag)
+        if name == "Header":
+            stats.root_sections[name] = 1
+            continue
+        # conta filhos diretos relevantes (Transaction, Payment, …)
+        n = sum(1 for gc in child if True)
+        stats.root_sections[name] = n
 
     financial = _find_child(root, "FinancialTransactions")
     if financial is None:
