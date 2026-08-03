@@ -296,31 +296,69 @@ async def reprocessar_dia(
                 "Verifique se o serviço está no ar (:8000)."
             ) from exc
 
+    user_id, login = _user_meta(user)
+
     if resp.status_code >= 400:
-        detail = resp.text[:400]
-        raise RuntimeError(f"stone-extracao HTTP {resp.status_code}: {detail}")
+        detail = resp.text[:800]
+        try:
+            err_json = resp.json()
+            detail = str(err_json.get("detail") or detail)
+        except Exception:
+            pass
+        registrar_acao_log(
+            user_id=user_id,
+            login=login,
+            acao="reprocessar_dia_erro",
+            id_stone=None,
+            antes=None,
+            depois={
+                "reference_date": ymd,
+                "http_status": resp.status_code,
+                "detail": detail[:500],
+            },
+            obs=f"Erro Stone/extração {ymd}: {detail[:300]}",
+        )
+        raise RuntimeError(f"stone-extracao HTTP {resp.status_code}: {detail}") from None
 
     body = resp.json()
-    user_id, login = _user_meta(user)
+    parsed = body.get("parsed_count")
+    published = body.get("published_count")
+    stone_msg = body.get("message")
+    obs = f"Republicação conciliação {ymd} | published={published}"
+    if stone_msg:
+        obs = f"{obs} | {stone_msg}"
     registrar_acao_log(
         user_id=user_id,
         login=login,
         acao="reprocessar_dia",
         id_stone=None,
         antes=None,
-        depois={"reference_date": ymd, "published_count": body.get("published_count")},
-        obs=f"Republicação conciliação {ymd}",
+        depois={
+            "reference_date": ymd,
+            "parsed_count": parsed,
+            "published_count": published,
+            "raw_bytes": body.get("raw_bytes"),
+            "message": stone_msg,
+        },
+        obs=obs[:500],
     )
+    if published == 0 and stone_msg:
+        mensagem = stone_msg
+    else:
+        mensagem = (
+            "Dia republicado na fila. Registros já integrados (status 5) "
+            "são ignorados pelo consumer."
+        )
     return {
         "reference_date": body.get("reference_date", ymd),
-        "parsed_count": body.get("parsed_count"),
-        "published_count": body.get("published_count"),
+        "parsed_count": parsed,
+        "published_count": published,
         "queue": body.get("queue"),
         "source": body.get("source"),
         "mode": body.get("mode"),
+        "raw_bytes": body.get("raw_bytes"),
+        "stone_message": stone_msg,
+        "totais_avisos": body.get("totais_avisos") or [],
         "stone_extracao_url": url,
-        "mensagem": (
-            "Dia republicado na fila. Registros já integrados (status 5) "
-            "são ignorados pelo consumer."
-        ),
+        "mensagem": mensagem,
     }

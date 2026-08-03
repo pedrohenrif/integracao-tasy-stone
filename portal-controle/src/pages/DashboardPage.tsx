@@ -35,9 +35,16 @@ export function DashboardPage() {
     setMsg("");
     try {
       const res = await reprocessarDiaApi(dia);
+      const pub = res.published_count ?? "?";
+      const parsed = res.parsed_count ?? "?";
+      const extra = res.stone_message || res.mensagem || "";
       setMsg(
-        `Integração do dia ${dia}: publicados ${res.published_count ?? res.stone?.published_count ?? "?"} (Stone).`,
+        `Dia ${dia}: parseados ${parsed}, publicados ${pub}.` +
+          (extra ? ` ${extra}` : ""),
       );
+      if (Number(pub) === 0) {
+        setError(extra || "Stone não retornou transações para esta data.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao executar dia");
     } finally {

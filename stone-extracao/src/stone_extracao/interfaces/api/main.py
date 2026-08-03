@@ -107,6 +107,9 @@ class ConciliationResponse(BaseModel):
     queue: str
     sample_ids: list[str] = Field(default_factory=list)
     mode: str = "manual"
+    message: str | None = None
+    raw_bytes: int | None = None
+    totais_avisos: list[str] = Field(default_factory=list)
 
 
 class PixRequestResponse(BaseModel):
@@ -156,6 +159,9 @@ def _to_response(result: ExtracaoResultado, *, mode: str) -> ConciliationRespons
         queue=settings.RABBITMQ_QUEUE_CARTAO,
         sample_ids=result.sample_ids,
         mode=mode,
+        message=result.message,
+        raw_bytes=result.raw_bytes,
+        totais_avisos=list(result.totais_avisos or []),
     )
 
 
@@ -203,8 +209,10 @@ async def ingest_cartao(
     try:
         result = await executar_extracao_cartao(publisher, date)
     except StoneFetchError as exc:
+        logger.error("Extração cartão falhou (Stone) | date=%s | %s", date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("Extração cartão falhou | date=%s", date)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _to_response(result, mode="manual")
 

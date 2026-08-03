@@ -10,8 +10,8 @@
 
 -- ---------------------------------------------------------------------------
 -- Bandeiras locais (não confundir com BrandId Stone)
--- Stone: 1=visa 2=mc 3=amex 4=elo 5=hipercard 6=diners
--- Aqui:  1=Visa 2=MC 3=Elo 4=Alelo 5=Amex 6=Hipercard
+-- Stone BrandId: 1=Visa 2=MC 3=Amex 4=Cabal 5=UnionPay 9=Hipercard 171=Elo
+-- Aqui: 1=Visa 2=MC 3=Elo 4=Alelo 5=Amex 6=Hipercard 7=Ticket 8=Cabal 9=UnionPay
 -- ---------------------------------------------------------------------------
 INSERT INTO bandeiras (cd_bandeira, ds_bandeira) VALUES
     (1, 'Visa'),
@@ -20,7 +20,9 @@ INSERT INTO bandeiras (cd_bandeira, ds_bandeira) VALUES
     (4, 'Alelo'),
     (5, 'American Express'),
     (6, 'Hipercard'),
-    (7, 'Ticket')
+    (7, 'Ticket'),
+    (8, 'Cabal'),
+    (9, 'UnionPay')
 ON CONFLICT (cd_bandeira) DO UPDATE SET ds_bandeira = EXCLUDED.ds_bandeira;
 
 INSERT INTO tipos_transacoes (cd_tipo_transacao, ds_tipo_transacao) VALUES
@@ -44,10 +46,11 @@ INSERT INTO mapeamento_transacoes_tasy (
     (3,  21, 3, NULL), -- Pix
     (4,   7, 1, 2),    -- Credito Mastercard
     (5,   8, 2, 2),    -- Debito Mastercard
-    (6,  11, 2, 3),    -- Debito Elo
-    (8,  10, 1, 3),    -- Credito Elo
+    (6,  11, 2, 3),    -- Debito Elo → Tasy 11
+    (8,  10, 1, 3),    -- Credito Elo → Tasy 10 (bandeira local 3 = Elo)
     (9,  12, 1, 5),    -- Credito American Express
-    (10,  9, 1, 6),    -- Credito Hipercard
+    (10,  9, 1, 6),    -- Credito Hipercard → Tasy 9
+    -- Ticket (bandeira local 7): cadastrar no portal quando o hospital informar o ID Tasy
     -- Pré-pago (tipo 6) — códigos Tasy Cotolengo
     (20, 27, 6, 1),    -- Pre_pago Visa (crédito pré-pago) → 27
     (21, 25, 6, 2),    -- Pre_pago Mastercard (crédito pré-pago) → 25

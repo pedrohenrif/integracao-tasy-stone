@@ -24,6 +24,8 @@ class ExtracaoResultado:
     sample_ids: list[str]
     transactions: list[TransacaoCartao]
     totais_avisos: list[str] | None = None
+    message: str | None = None
+    raw_bytes: int | None = None
 
 
 class ExtrairConciliacaoCartao:
@@ -41,10 +43,18 @@ class ExtrairConciliacaoCartao:
 
     async def execute(self, reference_date: str) -> ExtracaoResultado:
         raw = await self.stone_client.fetch(reference_date)
-        logger.info("Recebido | cartao | date=%s | bytes=%s", reference_date, len(raw))
+        raw_bytes = len(raw)
+        logger.info("Recebido | cartao | date=%s | bytes=%s", reference_date, raw_bytes)
 
         transactions = self.parser.parse(raw)
         logger.info("Parseado | cartao | date=%s | count=%s", reference_date, len(transactions))
+        if not transactions:
+            logger.warning(
+                "Nenhuma transação parseada | cartao | date=%s | bytes=%s | "
+                "verifique StoneCode/data no portal Stone ou XML sem FinancialTransactions",
+                reference_date,
+                raw_bytes,
+            )
 
         totais = analyze_cartao_totais(raw, transactions)
         for aviso in totais.avisos:
@@ -80,6 +90,13 @@ class ExtrairConciliacaoCartao:
         from stone_extracao.infrastructure.config.settings import settings
 
         source = "sample" if settings.STONE_USE_SAMPLE else "stone_api"
+        message = None
+        if not transactions:
+            message = (
+                f"Stone retornou arquivo sem transações parseáveis "
+                f"(date={reference_date}, bytes={raw_bytes}). "
+                "Confira StoneCode/merchant e a data no portal Stone."
+            )
         return ExtracaoResultado(
             reference_date=reference_date,
             source=source,
@@ -88,4 +105,6 @@ class ExtrairConciliacaoCartao:
             sample_ids=[t.id_stone for t in transactions[:5]],
             transactions=transactions,
             totais_avisos=list(totais.avisos),
+            message=message,
+            raw_bytes=raw_bytes,
         )

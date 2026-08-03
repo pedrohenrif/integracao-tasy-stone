@@ -181,6 +181,9 @@ export async function reprocessarDiaApi(date: string) {
     published_count?: number;
     queue?: string;
     mensagem?: string;
+    stone_message?: string | null;
+    raw_bytes?: number | null;
+    totais_avisos?: string[];
   }>("/api/reprocessar/dia", {
     method: "POST",
     body: JSON.stringify({ date }),

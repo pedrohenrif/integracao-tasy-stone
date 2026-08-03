@@ -139,11 +139,16 @@ export function ErrosPage() {
     setMsg("");
     try {
       const res = await reprocessarDiaApi(dia);
+      const pub = res.published_count ?? 0;
+      const extra = res.stone_message || "";
       setMsg(
-        `Dia ${res.reference_date}: ${res.published_count ?? 0} publicadas` +
+        `Dia ${res.reference_date}: ${pub} publicadas` +
           (res.parsed_count != null ? ` (${res.parsed_count} lidas)` : "") +
-          ". Já integradas são ignoradas pelo consumer.",
+          (extra ? ` — ${extra}` : ". Já integradas são ignoradas pelo consumer."),
       );
+      if (pub === 0) {
+        setError(extra || "Stone não retornou transações para esta data.");
+      }
       await load();
     } catch (e) {
       setError(detailMessage(e));

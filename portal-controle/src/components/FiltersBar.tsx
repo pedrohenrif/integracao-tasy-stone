@@ -63,6 +63,21 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
         </select>
       </label>
       <label>
+        Bandeira
+        <select value={value.bandeira || ""} onChange={(e) => set("bandeira", e.target.value)}>
+          <option value="">Todas</option>
+          <option value="visa">Visa</option>
+          <option value="mastercard">Mastercard</option>
+          <option value="elo">Elo</option>
+          <option value="amex">Amex</option>
+          <option value="hipercard">Hipercard</option>
+          <option value="ticket">Ticket</option>
+          <option value="cabal">Cabal</option>
+          <option value="unionpay">UnionPay</option>
+          <option value="alelo">Alelo</option>
+        </select>
+      </label>
+      <label>
         ID Stone
         <input value={value.id_stone || ""} onChange={(e) => set("id_stone", e.target.value)} placeholder="parcial" />
       </label>

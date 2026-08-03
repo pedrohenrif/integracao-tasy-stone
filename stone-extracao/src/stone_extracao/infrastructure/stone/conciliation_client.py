@@ -38,18 +38,49 @@ class StoneConciliationClient:
 
         # Stone pode responder 307 (ex.: arquivo em storage). Seguir redirect.
         async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
-            response = await client.get(url, headers=headers)
-            if response.status_code != 200:
-                raise StoneFetchError(
-                    f"Stone API {response.status_code}: {response.text[:400]}"
+            try:
+                response = await client.get(url, headers=headers)
+            except httpx.RequestError as exc:
+                logger.error(
+                    "Stone API falhou (rede) | url=%s | erro=%s",
+                    url,
+                    exc,
                 )
+                raise StoneFetchError(
+                    f"Falha de rede ao chamar Stone: {exc}"
+                ) from exc
+
+            if response.status_code != 200:
+                body_preview = (response.text or "")[:800]
+                logger.error(
+                    "Stone API erro | status=%s | url=%s | final_url=%s | body=%s",
+                    response.status_code,
+                    url,
+                    response.url,
+                    body_preview,
+                )
+                raise StoneFetchError(
+                    f"Stone API HTTP {response.status_code} | "
+                    f"merchant={settings.STONE_MERCHANT_ID} | date={reference_date} | "
+                    f"body={body_preview}"
+                )
+            raw = decode_stone_body(response.content, response.headers)
             logger.info(
-                "Stone OK | status=%s | bytes=%s | final_url=%s",
+                "Stone OK | status=%s | bytes=%s | date=%s | merchant=%s | final_url=%s",
                 response.status_code,
-                len(response.content),
+                len(raw),
+                reference_date,
+                settings.STONE_MERCHANT_ID,
                 response.url,
             )
-            return decode_stone_body(response.content, response.headers)
+            if len(raw) < 200:
+                logger.warning(
+                    "Stone resposta muito pequena | date=%s | bytes=%s | preview=%s",
+                    reference_date,
+                    len(raw),
+                    raw[:300],
+                )
+            return raw
 
     def _read_sample(self, reference_date: str) -> bytes:
         path = Path(settings.STONE_CARTAO_SAMPLE_PATH)

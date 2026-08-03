@@ -3,16 +3,16 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-# BrandId Stone (Layout 2.2) → nome canônico
+# BrandId Stone (Layout 2.2 oficial) → nome canônico
+# https://conciliacao.stone.com.br/reference/brandid
 STONE_BRAND_ID_MAP: dict[str, str] = {
     "1": "visa",
     "2": "mastercard",
     "3": "amex",
-    "4": "elo",
-    "5": "hipercard",
-    "6": "diners",
-    "9": "sorocred",
-    "171": "ticket",
+    "4": "cabal",
+    "5": "unionpay",
+    "9": "hipercard",
+    "171": "elo",  # Elo (NÃO é Ticket — bug antigo mapeava 171→ticket)
 }
 
 # Nome / alias → cd_bandeira da tabela local `bandeiras` (Cotolengo)
@@ -25,8 +25,10 @@ BANDEIRA_LOCAL_ID: dict[str, int] = {
     "american express": 5,
     "american_express": 5,
     "hipercard": 6,
-    # Ticket / VR — cadastre bandeira 7 + mapeamento no portal se o id Tasy diferir
+    # Ticket / VR — só se a Stone enviar o nome; BrandId oficial de Ticket não está na doc 2.2
     "ticket": 7,
+    "cabal": 8,
+    "unionpay": 9,
 }
 
 # Tipo API Stone → cd_tipo_transacao local (mapeamento_transacoes_tasy)
