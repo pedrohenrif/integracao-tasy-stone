@@ -12,6 +12,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw @"
+Este script PRECISA rodar em PowerShell 'Executar como administrador'.
+
+1) Feche este terminal
+2) Menu Iniciar → PowerShell → botão direito → Executar como administrador
+3) cd C:\GHR_Tech\integracao-tasy-stone
+4) .\deploy\windows\install-services.ps1 -NssmPath "C:\Tools\nssm\nssm-2.24\win64\nssm.exe"
+
+Nao use o terminal do VS Code a menos que o proprio VS Code tenha sido aberto como Admin.
+"@
+}
+
 function Find-Nssm {
     if ($NssmPath -and (Test-Path $NssmPath)) { return (Resolve-Path $NssmPath).Path }
     $cmd = Get-Command nssm -ErrorAction SilentlyContinue
@@ -64,15 +79,22 @@ function Install-NssmService {
     }
 
     & $nssm install $Name $Application $AppParameters
-    & $nssm set $Name AppDirectory $AppDirectory
-    & $nssm set $Name DisplayName $DisplayName
-    & $nssm set $Name Start SERVICE_AUTO_START
-    & $nssm set $Name AppStdout $Stdout
-    & $nssm set $Name AppStderr $Stderr
-    & $nssm set $Name AppRotateFiles 1
-    & $nssm set $Name AppRotateBytes 10485760
-    & $nssm set $Name AppExit Default Restart
-    & $nssm set $Name AppRestartDelay 5000
+    if ($LASTEXITCODE -ne 0) { throw "nssm install falhou para $Name (exit $LASTEXITCODE)" }
+
+    foreach ($args in @(
+        @("set", $Name, "AppDirectory", $AppDirectory),
+        @("set", $Name, "DisplayName", $DisplayName),
+        @("set", $Name, "Start", "SERVICE_AUTO_START"),
+        @("set", $Name, "AppStdout", $Stdout),
+        @("set", $Name, "AppStderr", $Stderr),
+        @("set", $Name, "AppRotateFiles", "1"),
+        @("set", $Name, "AppRotateBytes", "10485760"),
+        @("set", $Name, "AppExit", "Default", "Restart"),
+        @("set", $Name, "AppRestartDelay", "5000")
+    )) {
+        & $nssm @args
+        if ($LASTEXITCODE -ne 0) { throw "nssm $($args -join ' ') falhou (exit $LASTEXITCODE)" }
+    }
     Write-Host "OK: serviço $Name instalado"
 }
 
