@@ -20,7 +20,7 @@ from tasy_insercao.infrastructure.persistence.catalog_queries import (
     upsert_maquininha,
 )
 from tasy_insercao.infrastructure.persistence.debug_queries import listar_caixas
-from tasy_insercao.interfaces.api.deps import CurrentUser
+from tasy_insercao.interfaces.api.deps import AdminUser
 
 router = APIRouter(prefix="/api/cadastros", tags=["cadastros"])
 
@@ -59,7 +59,7 @@ class BandeiraBody(BaseModel):
 
 
 @router.get("/maquininhas")
-async def get_maquininhas(_user: CurrentUser):
+async def get_maquininhas(_user: AdminUser):
     try:
         return {
             "items": [_ser(x) for x in listar_maquininhas()],
@@ -71,7 +71,7 @@ async def get_maquininhas(_user: CurrentUser):
 
 
 @router.post("/maquininhas")
-async def post_maquininha(_user: CurrentUser, body: MaquininhaBody):
+async def post_maquininha(_user: AdminUser, body: MaquininhaBody):
     try:
         row = upsert_maquininha(
             nr_serie_maquininha=body.nr_serie_maquininha,
@@ -86,7 +86,7 @@ async def post_maquininha(_user: CurrentUser, body: MaquininhaBody):
 
 
 @router.get("/mapeamentos")
-async def get_mapeamentos(_user: CurrentUser):
+async def get_mapeamentos(_user: AdminUser):
     try:
         return {
             "items": [_ser(x) for x in listar_mapeamentos()],
@@ -98,7 +98,7 @@ async def get_mapeamentos(_user: CurrentUser):
 
 
 @router.post("/mapeamentos")
-async def post_mapeamento(_user: CurrentUser, body: MapeamentoBody):
+async def post_mapeamento(_user: AdminUser, body: MapeamentoBody):
     try:
         row = criar_mapeamento(
             cd_cartao_bandeira_tasy=body.cd_cartao_bandeira_tasy,
@@ -111,7 +111,7 @@ async def post_mapeamento(_user: CurrentUser, body: MapeamentoBody):
 
 
 @router.put("/mapeamentos/{nr_sequencia}")
-async def put_mapeamento(_user: CurrentUser, nr_sequencia: int, body: MapeamentoBody):
+async def put_mapeamento(_user: AdminUser, nr_sequencia: int, body: MapeamentoBody):
     try:
         row = atualizar_mapeamento(
             nr_sequencia,
@@ -129,7 +129,7 @@ async def put_mapeamento(_user: CurrentUser, nr_sequencia: int, body: Mapeamento
 
 
 @router.get("/bandeiras")
-async def get_bandeiras(_user: CurrentUser):
+async def get_bandeiras(_user: AdminUser):
     try:
         return {"items": listar_bandeiras()}
     except Exception as exc:
@@ -137,7 +137,7 @@ async def get_bandeiras(_user: CurrentUser):
 
 
 @router.post("/bandeiras")
-async def post_bandeira(_user: CurrentUser, body: BandeiraBody):
+async def post_bandeira(_user: AdminUser, body: BandeiraBody):
     try:
         return upsert_bandeira(body.cd_bandeira, body.ds_bandeira)
     except Exception as exc:

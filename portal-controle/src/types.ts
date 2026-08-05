@@ -5,6 +5,16 @@ export type User = {
   admin: boolean;
 };
 
+export type PortalUsuario = {
+  id: number;
+  login: string;
+  nome: string;
+  admin: boolean;
+  ativo: boolean;
+  dt_inclusao?: string | null;
+  dt_ultimo_login?: string | null;
+};
+
 export type ResumoTotais = {
   total?: number;
   ok?: number;

@@ -1,4 +1,4 @@
-import type { FilaInfo, Filtros, Registro, ResumoTotais, User } from "../types";
+import type { FilaInfo, Filtros, PortalUsuario, Registro, ResumoTotais, User } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
@@ -52,6 +52,43 @@ export async function loginLogsApi(limit = 100) {
   return request<{ items: Array<Record<string, unknown>> }>(
     `/api/auth/login-logs?limit=${limit}`,
   );
+}
+
+export async function usuariosApi() {
+  return request<{ items: PortalUsuario[] }>("/api/auth/usuarios");
+}
+
+export async function criarUsuarioApi(body: {
+  login: string;
+  nome: string;
+  password: string;
+  admin?: boolean;
+}) {
+  return request<PortalUsuario>("/api/auth/usuarios", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function atualizarUsuarioApi(
+  id: number,
+  body: {
+    nome?: string;
+    password?: string;
+    admin?: boolean;
+    ativo?: boolean;
+  },
+) {
+  return request<PortalUsuario>(`/api/auth/usuarios/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function desativarUsuarioApi(id: number) {
+  return request<PortalUsuario>(`/api/auth/usuarios/${id}`, {
+    method: "DELETE",
+  });
 }
 
 export async function caixasApi() {

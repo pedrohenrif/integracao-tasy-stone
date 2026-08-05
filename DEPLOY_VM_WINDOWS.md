@@ -60,7 +60,7 @@ Preencher Postgres, Oracle, `STONE_API_TOKEN`, CORS com o subdomínio:
 ```env
 RABBITMQ_URL=amqp://stone:stone@localhost:5672/
 RABBITMQ_MGMT_URL=http://localhost:15672
-PORTAL_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://10.1.1.190:5173,https://stone.pequenocotolengo.org.br
+PORTAL_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://10.1.1.190:5173,http://stone.financeiro:5173,https://stone.pequenocotolengo.org.br
 STONE_EXTRACAO_BASE_URL=http://127.0.0.1:8000
 ```
 

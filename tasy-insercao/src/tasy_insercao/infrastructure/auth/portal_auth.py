@@ -172,3 +172,120 @@ def authenticate(login: str, password: str) -> dict[str, Any]:
     if not verify_password(password, user["ds_senha_hash"]):
         raise AuthError("Usuário ou senha inválidos")
     return user
+
+
+def listar_usuarios() -> list[dict[str, Any]]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                nr_sequencia, ds_login, ds_nome, ie_ativo, ie_admin,
+                dt_inclusao, dt_ultimo_login
+            FROM portal_usuario
+            ORDER BY ds_login
+            """
+        )
+        return list(cur.fetchall())
+
+
+def criar_usuario(
+    *,
+    login: str,
+    nome: str,
+    password: str,
+    admin: bool = False,
+) -> dict[str, Any]:
+    login_n = login.strip()
+    nome_n = nome.strip()
+    if not login_n or not nome_n or not password:
+        raise AuthError("Login, nome e senha são obrigatórios")
+    if get_user_by_login(login_n):
+        raise AuthError("Login já cadastrado")
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO portal_usuario (ds_login, ds_nome, ds_senha_hash, ie_ativo, ie_admin)
+            VALUES (%(login)s, %(nome)s, %(hash)s, 'S', %(admin)s)
+            RETURNING nr_sequencia, ds_login, ds_nome, ie_ativo, ie_admin,
+                      dt_inclusao, dt_ultimo_login
+            """,
+            {
+                "login": login_n[:80],
+                "nome": nome_n[:120],
+                "hash": hash_password(password),
+                "admin": "S" if admin else "N",
+            },
+        )
+        row = cur.fetchone()
+        conn.commit()
+        if not row:
+            raise AuthError("Falha ao criar usuário")
+        return row
+
+
+def atualizar_usuario(
+    user_id: int,
+    *,
+    nome: str | None = None,
+    password: str | None = None,
+    admin: bool | None = None,
+    ativo: bool | None = None,
+) -> dict[str, Any]:
+    current = get_user_by_id(user_id)
+    if not current:
+        raise AuthError("Usuário não encontrado")
+
+    nome_n = current["ds_nome"] if nome is None else nome.strip()
+    if not nome_n:
+        raise AuthError("Nome é obrigatório")
+    ie_admin = current["ie_admin"] if admin is None else ("S" if admin else "N")
+    ie_ativo = current["ie_ativo"] if ativo is None else ("S" if ativo else "N")
+
+    with _connect() as conn, conn.cursor() as cur:
+        if password:
+            cur.execute(
+                """
+                UPDATE portal_usuario
+                SET ds_nome = %(nome)s,
+                    ds_senha_hash = %(hash)s,
+                    ie_admin = %(admin)s,
+                    ie_ativo = %(ativo)s
+                WHERE nr_sequencia = %(id)s
+                RETURNING nr_sequencia, ds_login, ds_nome, ie_ativo, ie_admin,
+                          dt_inclusao, dt_ultimo_login
+                """,
+                {
+                    "id": user_id,
+                    "nome": nome_n[:120],
+                    "hash": hash_password(password),
+                    "admin": ie_admin,
+                    "ativo": ie_ativo,
+                },
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE portal_usuario
+                SET ds_nome = %(nome)s,
+                    ie_admin = %(admin)s,
+                    ie_ativo = %(ativo)s
+                WHERE nr_sequencia = %(id)s
+                RETURNING nr_sequencia, ds_login, ds_nome, ie_ativo, ie_admin,
+                          dt_inclusao, dt_ultimo_login
+                """,
+                {
+                    "id": user_id,
+                    "nome": nome_n[:120],
+                    "admin": ie_admin,
+                    "ativo": ie_ativo,
+                },
+            )
+        row = cur.fetchone()
+        conn.commit()
+        if not row:
+            raise AuthError("Usuário não encontrado")
+        return row
+
+
+def desativar_usuario(user_id: int) -> dict[str, Any]:
+    return atualizar_usuario(user_id, ativo=False)

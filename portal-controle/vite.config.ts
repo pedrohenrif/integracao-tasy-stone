@@ -11,6 +11,7 @@ const allowedHosts = [
   "127.0.0.1",
   "10.1.1.190",
   "stone.pequenocotolengo.org.br",
+  "stone.financeiro",
 ];
 
 export default defineConfig({

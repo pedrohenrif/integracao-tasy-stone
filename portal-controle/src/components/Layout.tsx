@@ -7,9 +7,10 @@ const links = [
   { to: "/erros", label: "Erros / Sem Tesouraria" },
   { to: "/auditoria", label: "Auditoria", admin: true },
   { to: "/scheduler", label: "Scheduler", admin: true },
-  { to: "/cadastros/maquininhas", label: "Maquininhas" },
-  { to: "/cadastros/mapeamentos", label: "Mapeamentos" },
+  { to: "/cadastros/maquininhas", label: "Maquininhas", admin: true },
+  { to: "/cadastros/mapeamentos", label: "Mapeamentos", admin: true },
   { to: "/filas", label: "Filas" },
+  { to: "/usuarios", label: "Usuários", admin: true },
   { to: "/acessos", label: "Logs de acesso", admin: true },
 ];
 
@@ -38,7 +39,7 @@ export function Layout() {
             <strong>{user?.nome}</strong>
             <span>
               {user?.login}
-              {user?.admin ? " · admin" : ""}
+              {user?.admin ? " · admin" : " · financeiro"}
             </span>
           </div>
           <button type="button" className="btn ghost" onClick={logout}>
