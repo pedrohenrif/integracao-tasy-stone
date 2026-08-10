@@ -40,14 +40,24 @@ export function DashboardPage() {
       const stats = res.parse_stats?.summary
         ? String(res.parse_stats.summary)
         : "";
-      const extra = res.stone_message || res.mensagem || "";
+      const pixPart = res.pix?.error
+        ? ` PIX: falha — ${res.pix.error}`
+        : res.pix?.message
+          ? ` PIX: ${res.pix.message}`
+          : res.pix?.status
+            ? ` PIX: ${res.pix.status}`
+            : "";
+      const extra = res.stone_message || "";
       setMsg(
-        `Dia ${dia}: parseados ${parsed}, publicados ${pub}.` +
+        `Dia ${dia}: cartão parseados ${parsed}, publicados ${pub}.` +
           (stats ? ` [${stats}]` : "") +
-          (extra ? ` ${extra}` : ""),
+          (extra ? ` ${extra}` : "") +
+          pixPart,
       );
-      if (Number(pub) === 0) {
+      if (Number(pub) === 0 && !pixPart) {
         setError(extra || stats || "Stone não retornou transações para esta data.");
+      } else if (res.pix?.error) {
+        setError(`Cartão ok; PIX falhou: ${res.pix.error}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao executar dia");
@@ -109,9 +119,11 @@ export function DashboardPage() {
               disabled={busy || !dia}
               onClick={() => void onExecutarDia()}
             >
-              Extrair cartão do dia
+              Extrair cartão + PIX do dia
             </button>
-            <span className="muted small">Chama Stone e publica na fila (além da rotina D-1)</span>
+            <span className="muted small">
+              Cartão → fila; PIX solicita extrato (webhook assíncrono)
+            </span>
           </div>
         </div>
       )}

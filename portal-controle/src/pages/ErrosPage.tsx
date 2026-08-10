@@ -141,12 +141,20 @@ export function ErrosPage() {
       const res = await reprocessarDiaApi(dia);
       const pub = res.published_count ?? 0;
       const extra = res.stone_message || "";
+      const pixPart = res.pix?.error
+        ? ` | PIX falha: ${res.pix.error}`
+        : res.pix?.message
+          ? ` | PIX: ${res.pix.message}`
+          : "";
       setMsg(
-        `Dia ${res.reference_date}: ${pub} publicadas` +
+        `Dia ${res.reference_date}: cartão ${pub} publicadas` +
           (res.parsed_count != null ? ` (${res.parsed_count} lidas)` : "") +
-          (extra ? ` — ${extra}` : ". Já integradas são ignoradas pelo consumer."),
+          (extra ? ` — ${extra}` : "") +
+          pixPart,
       );
-      if (pub === 0) {
+      if (res.pix?.error) {
+        setError(`Cartão ok; PIX falhou: ${res.pix.error}`);
+      } else if (pub === 0) {
         setError(extra || "Stone não retornou transações para esta data.");
       }
       await load();
@@ -189,9 +197,9 @@ export function ErrosPage() {
             disabled={busy || !dia}
             onClick={() => void onReprocessDia()}
           >
-            Reprocessar dia
+            Reprocessar dia (cartão + PIX)
           </button>
-          <span className="muted small">Chama stone-extracao (conciliação Stone)</span>
+          <span className="muted small">Cartão na fila + solicitação PIX (webhook)</span>
         </div>
       </div>
 

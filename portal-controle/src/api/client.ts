@@ -222,6 +222,13 @@ export async function reprocessarDiaApi(date: string) {
     raw_bytes?: number | null;
     parse_stats?: Record<string, unknown>;
     totais_avisos?: string[];
+    pix?: {
+      reference_date?: string;
+      status?: string | null;
+      message?: string | null;
+      error?: string | null;
+      published_from_body?: number;
+    };
   }>("/api/reprocessar/dia", {
     method: "POST",
     body: JSON.stringify({ date }),

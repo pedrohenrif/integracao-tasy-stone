@@ -283,48 +283,79 @@ async def reprocessar_dia(
     *,
     user: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Chama stone-extracao POST /cartao/conciliation?date=YYYYMMDD."""
+    """
+    Chama stone-extracao:
+    1) POST /cartao/conciliation?date=YYYYMMDD
+    2) POST /pix/conciliation/request?date=YYYY-MM-DD
+    """
     ymd = data_ref.strftime("%Y%m%d")
+    iso = data_ref.strftime("%Y-%m-%d")
     base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
-    url = f"{base}/cartao/conciliation"
+    url_cartao = f"{base}/cartao/conciliation"
+    url_pix = f"{base}/pix/conciliation/request"
+    user_id, login = _user_meta(user)
+
     async with httpx.AsyncClient(timeout=180.0) as client:
         try:
-            resp = await client.post(url, params={"date": ymd})
+            resp = await client.post(url_cartao, params={"date": ymd})
         except httpx.RequestError as exc:
             raise RuntimeError(
                 f"stone-extracao inacessível em {base}: {exc}. "
                 "Verifique se o serviço está no ar (:8000)."
             ) from exc
 
-    user_id, login = _user_meta(user)
+        if resp.status_code >= 400:
+            detail = resp.text[:800]
+            try:
+                err_json = resp.json()
+                detail = str(err_json.get("detail") or detail)
+            except Exception:
+                pass
+            registrar_acao_log(
+                user_id=user_id,
+                login=login,
+                acao="reprocessar_dia_erro",
+                id_stone=None,
+                antes=None,
+                depois={
+                    "reference_date": ymd,
+                    "http_status": resp.status_code,
+                    "detail": detail[:500],
+                },
+                obs=f"Erro Stone/extração cartão {ymd}: {detail[:300]}",
+            )
+            raise RuntimeError(f"stone-extracao HTTP {resp.status_code}: {detail}") from None
 
-    if resp.status_code >= 400:
-        detail = resp.text[:800]
+        body = resp.json()
+
+        pix_body: dict[str, Any] = {}
+        pix_error: str | None = None
         try:
-            err_json = resp.json()
-            detail = str(err_json.get("detail") or detail)
-        except Exception:
-            pass
-        registrar_acao_log(
-            user_id=user_id,
-            login=login,
-            acao="reprocessar_dia_erro",
-            id_stone=None,
-            antes=None,
-            depois={
-                "reference_date": ymd,
-                "http_status": resp.status_code,
-                "detail": detail[:500],
-            },
-            obs=f"Erro Stone/extração {ymd}: {detail[:300]}",
-        )
-        raise RuntimeError(f"stone-extracao HTTP {resp.status_code}: {detail}") from None
+            resp_pix = await client.post(url_pix, params={"date": iso})
+            if resp_pix.status_code >= 400:
+                detail_pix = resp_pix.text[:800]
+                try:
+                    err_pix = resp_pix.json()
+                    detail_pix = str(err_pix.get("detail") or detail_pix)
+                except Exception:
+                    pass
+                pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
+            else:
+                pix_body = resp_pix.json()
+        except httpx.RequestError as exc:
+            pix_error = f"stone-extracao PIX inacessível: {exc}"
 
-    body = resp.json()
     parsed = body.get("parsed_count")
     published = body.get("published_count")
     stone_msg = body.get("message")
-    obs = f"Republicação conciliação {ymd} | published={published}"
+    pix_status = pix_body.get("status") if pix_body else None
+    pix_msg = pix_body.get("message") if pix_body else pix_error
+
+    obs = f"Republicação {ymd} | cartão published={published}"
+    if pix_error:
+        obs = f"{obs} | PIX erro={pix_error[:120]}"
+    elif pix_status:
+        obs = f"{obs} | PIX status={pix_status}"
     if stone_msg:
         obs = f"{obs} | {stone_msg}"
     registrar_acao_log(
@@ -340,6 +371,10 @@ async def reprocessar_dia(
             "raw_bytes": body.get("raw_bytes"),
             "message": stone_msg,
             "parse_stats": body.get("parse_stats"),
+            "pix_reference_date": iso,
+            "pix_status": pix_status,
+            "pix_message": pix_msg,
+            "pix_error": pix_error,
         },
         obs=obs[:500],
     )
@@ -347,9 +382,14 @@ async def reprocessar_dia(
         mensagem = stone_msg
     else:
         mensagem = (
-            "Dia republicado na fila. Registros já integrados (status 5) "
+            "Dia republicado na fila (cartão). Registros já integrados (status 5) "
             "são ignorados pelo consumer."
         )
+    if pix_error:
+        mensagem = f"{mensagem} PIX: falha — {pix_error}"
+    elif pix_msg:
+        mensagem = f"{mensagem} PIX: {pix_msg}"
+
     return {
         "reference_date": body.get("reference_date", ymd),
         "parsed_count": parsed,
@@ -362,6 +402,14 @@ async def reprocessar_dia(
         "parse_stats": body.get("parse_stats") or {},
         "xml_backup_path": body.get("xml_backup_path"),
         "totais_avisos": body.get("totais_avisos") or [],
-        "stone_extracao_url": url,
+        "stone_extracao_url": url_cartao,
         "mensagem": mensagem,
+        "pix": {
+            "reference_date": iso,
+            "status": pix_status,
+            "message": pix_body.get("message") if pix_body else None,
+            "source": pix_body.get("source") if pix_body else None,
+            "published_from_body": pix_body.get("published_from_body") if pix_body else 0,
+            "error": pix_error,
+        },
     }
