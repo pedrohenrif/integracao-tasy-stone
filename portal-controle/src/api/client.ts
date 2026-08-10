@@ -280,12 +280,27 @@ export type SchedulerCartaoStatus = {
   schedule?: string;
 };
 
+export type SchedulerStatus = SchedulerCartaoStatus & {
+  flow?: string;
+};
+
 export async function schedulerCartaoApi() {
   return request<SchedulerCartaoStatus>("/api/scheduler/cartao");
 }
 
 export async function setSchedulerCartaoApi(enabled: boolean) {
   return request<SchedulerCartaoStatus>("/api/scheduler/cartao", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function schedulerPixApi() {
+  return request<SchedulerStatus>("/api/scheduler/pix");
+}
+
+export async function setSchedulerPixApi(enabled: boolean) {
+  return request<SchedulerStatus>("/api/scheduler/pix", {
     method: "POST",
     body: JSON.stringify({ enabled }),
   });

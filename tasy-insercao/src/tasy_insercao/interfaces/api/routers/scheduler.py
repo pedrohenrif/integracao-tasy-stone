@@ -71,6 +71,27 @@ async def set_cron_cartao(body: SchedulerToggleBody, user: AdminUser):
         id_stone=None,
         antes={"enabled": antes.get("enabled")},
         depois={"enabled": depois.get("enabled")},
-        obs=f"Cron D-1 {'ativado' if body.enabled else 'desativado'}",
+        obs=f"Cron cartão D-1 {'ativado' if body.enabled else 'desativado'}",
+    )
+    return depois
+
+
+@router.get("/pix")
+async def get_cron_pix(_user: AdminUser):
+    return await _stone_get("/scheduler/pix")
+
+
+@router.post("/pix")
+async def set_cron_pix(body: SchedulerToggleBody, user: AdminUser):
+    antes = await _stone_get("/scheduler/pix")
+    depois = await _stone_post("/scheduler/pix", {"enabled": body.enabled})
+    registrar_acao_log(
+        user_id=user.get("nr_sequencia"),
+        login=user.get("ds_login"),
+        acao="scheduler_pix_toggle",
+        id_stone=None,
+        antes={"enabled": antes.get("enabled")},
+        depois={"enabled": depois.get("enabled")},
+        obs=f"Cron PIX D-1 {'ativado' if body.enabled else 'desativado'}",
     )
     return depois

@@ -21,11 +21,15 @@ Cartão: cron/API D-1 → stone-extracao → stone.cartao.transactions → tasy-
 PIX:    request → webhook /pix/webhook → stone.pix.transactions → tasy-insercao → Tasy
 ```
 
-Cartão em prod: sempre **retroativo (dia anterior)**. Endpoint `POST /cartao/conciliation/d-1` ou cron (`CARTAO_CRON_ENABLED=true`, 06:00 BRT).
+Cartão em prod: sempre **retroativo (dia anterior)**. Endpoint `POST /cartao/conciliation/d-1` ou cron (`CARTAO_CRON_*`).  
+PIX em prod: `POST /pix/conciliation/d-1` ou cron (`PIX_CRON_*`) — solicita extrato; Stone entrega no webhook.
 
 ## Deploy VM Windows (Cotolengo)
 
-Ver **[DEPLOY_VM_WINDOWS.md](./DEPLOY_VM_WINDOWS.md)** (clone, Postgres, RabbitMQ, portal na rede).
+Ver **[DEPLOY_VM_WINDOWS.md](./DEPLOY_VM_WINDOWS.md)** (clone, Postgres, RabbitMQ, portal, **como reiniciar serviços**).
+
+- Portal interno: `http://stone.financeiro:5173`
+- Webhook PIX: `https://stone.pequenocotolengo.org.br/pix/webhook`
 
 ## Testes locais (passo a passo)
 

@@ -1,6 +1,6 @@
 # Deploy VM Windows (Cotolengo)
 
-Guia para clonar e subir na VM (`10.1.1.190` / `https://stone.pequenocotolengo.org.br`).
+Guia para clonar e subir na VM (`10.1.1.190` / portal interno `http://stone.financeiro:5173` / webhook `https://stone.pequenocotolengo.org.br`).
 
 ## Pré-requisitos na VM
 
@@ -99,15 +99,61 @@ Serviços criados (Auto Start):
 
 Logs: `deploy\windows\logs\`
 
+### Reiniciar / verificar serviços (PowerShell Admin)
+
+O `nssm` costuma **não** estar no PATH. Prefira os cmdlets do Windows:
+
 ```powershell
+# Status
 Get-Service StoneExtracao, TasyConsumer, TasyPainel, StonePortal
-# reiniciar um:
-Restart-Service StoneExtracao
-# remover todos:
+
+# Reiniciar um
+Restart-Service TasyPainel
+Restart-Service StonePortal
+
+# Reiniciar os quatro
+Get-Service StoneExtracao, TasyConsumer, TasyPainel, StonePortal | Restart-Service -Force
+```
+
+Quando reiniciar o quê:
+
+| Mudança no código / config | Reiniciar |
+|----------------------------|-----------|
+| Portal (front, `allowedHosts`, Usuários UI) | `StonePortal` |
+| API do portal (usuários, CORS, cadastros) | `TasyPainel` |
+| Consumer / insert Tasy | `TasyConsumer` |
+| Extração Stone / webhook / cron | `StoneExtracao` |
+| `.env` do `tasy-insercao` | `TasyPainel` (+ `TasyConsumer` se afetar o worker) |
+| `.env` do `stone-extracao` | `StoneExtracao` |
+
+Se tiver o caminho do NSSM:
+
+```powershell
+& "C:\Tools\nssm\nssm-2.24\win64\nssm.exe" restart TasyPainel
+& "C:\Tools\nssm\nssm-2.24\win64\nssm.exe" restart StonePortal
+```
+
+Remover todos os serviços:
+
+```powershell
 .\deploy\windows\uninstall-services.ps1
 ```
 
-## 5) Proxy do subdomínio (TI)
+## 5) URLs e proxy (TI)
+
+**Portal (rede interna do hospital):**
+
+- `http://stone.financeiro:5173` — DNS interno → VM `10.1.1.190:5173`
+- Alternativa: `http://10.1.1.190:5173`
+
+No `portal-controle/vite.config.ts`, o host `stone.financeiro` deve estar em `allowedHosts`.  
+No `.env` do `tasy-insercao`, incluir `http://stone.financeiro:5173` em `PORTAL_CORS_ORIGINS`.
+
+**Webhook PIX (internet / Stone):**
+
+- `https://stone.pequenocotolengo.org.br/pix/webhook` → `:8000`
+
+Proxy público (se usado):
 
 - `/` → portal (`:5173` ou IIS apontando para `portal-controle\dist`)
 - `/api`, `/health` → `http://127.0.0.1:8001`
@@ -117,10 +163,21 @@ Restart-Service StoneExtracao
 
 - [ ] http://127.0.0.1:8000/health
 - [ ] http://127.0.0.1:8001/health
-- [ ] http://127.0.0.1:5173 (login portal)
+- [ ] http://127.0.0.1:5173 ou http://stone.financeiro:5173 (login portal)
 - [ ] Reiniciar VM e conferir se os 4 serviços + RabbitMQ voltam sozinhos
 - [ ] Scheduler cartão (admin) quando for usar D-1
+- [ ] Scheduler PIX D-1 (admin) — webhook HTTPS já cadastrado
 - [ ] PIX webhook só após HTTPS público + register
+- [ ] Admin cria usuário Financeiro em **Usuários**
+
+### Crons D-1 (homolog / produção)
+
+| Fluxo | Horário (.env) | Painel | O que faz |
+|-------|----------------|--------|-----------|
+| Cartão | `CARTAO_CRON_*` | Scheduler → Cartão | Extrai XML D-1 → fila cartão |
+| PIX | `PIX_CRON_*` (padrão +5 min) | Scheduler → PIX | Solicita extrato D-1 → Stone manda no webhook |
+
+Após alterar código do cron: `Restart-Service StoneExtracao` (e `TasyPainel` / `StonePortal` se mudou o painel).
 
 ## Credenciais
 

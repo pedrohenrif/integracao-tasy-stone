@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     CARTAO_CRON_MINUTE: int = 0
     CARTAO_CRON_TZ: str = "America/Sao_Paulo"
 
+    # Rotina diária PIX D-1 (solicita extrato; Stone entrega no webhook)
+    # Horário independente; padrão 5 min após o cartão
+    PIX_CRON_ENABLED: bool = False
+    PIX_CRON_HOUR: int = 1
+    PIX_CRON_MINUTE: int = 5
+
     APP_NAME: str = "stone-extracao"
     APP_ENV: str = "homolog"
 

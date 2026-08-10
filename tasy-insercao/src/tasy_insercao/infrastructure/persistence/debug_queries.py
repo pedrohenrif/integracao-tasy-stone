@@ -55,9 +55,10 @@ def _where(f: FiltrosPainel) -> tuple[str, dict[str, Any]]:
     if f.cd_tipo_transacao:
         tipo = f.cd_tipo_transacao.strip().lower()
         if tipo == "pix":
+            # %% = literal % no psycopg3 (senão %p de %pix% vira placeholder inválido)
             clauses.append(
                 "(LOWER(COALESCE(r.cd_tipo_transacao, '')) = 'pix' "
-                "OR LOWER(COALESCE(r.ds_obs_processo, '')) LIKE '%pix%')"
+                "OR LOWER(COALESCE(r.ds_obs_processo, '')) LIKE '%%pix%%')"
             )
         else:
             clauses.append("LOWER(COALESCE(r.cd_tipo_transacao, '')) = %(tipo)s")

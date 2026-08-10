@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field, HttpUrl
 
-from stone_extracao.application.services.data_referencia import data_ontem
+from stone_extracao.application.services.data_referencia import data_ontem, data_ontem_iso
 from stone_extracao.application.use_cases.extrair_conciliacao_cartao import (
     ExtracaoResultado,
     ExtrairConciliacaoCartao,
@@ -15,7 +15,10 @@ from stone_extracao.application.use_cases.receber_webhook_pix import (
     extract_download_url,
     parse_webhook_payload,
 )
-from stone_extracao.application.use_cases.solicitar_extrato_pix import SolicitarExtratoPix
+from stone_extracao.application.use_cases.solicitar_extrato_pix import (
+    SolicitarExtratoPix,
+    SolicitarPixResultado,
+)
 from stone_extracao.infrastructure.config.logging import get_logger, setup_logging
 from stone_extracao.infrastructure.config.settings import settings
 from stone_extracao.infrastructure.messaging.rabbit import (
@@ -31,6 +34,12 @@ from stone_extracao.infrastructure.scheduling.cartao_diario import (
     criar_scheduler_cartao,
     set_cron_enabled,
     status_cron,
+)
+from stone_extracao.infrastructure.scheduling.pix_diario import (
+    adicionar_job_pix,
+    aplicar_estado_inicial_pix,
+    set_cron_pix_enabled,
+    status_cron_pix,
 )
 from stone_extracao.infrastructure.stone.conciliation_client import (
     StoneConciliationClient,
@@ -63,6 +72,19 @@ async def executar_extracao_cartao(
     return result
 
 
+async def executar_solicitacao_pix(
+    publisher: RabbitPublisher,
+    reference_date: str,
+) -> SolicitarPixResultado:
+    """Caminho único: API manual, D-1 e cron diário PIX (request → webhook)."""
+    use_case = SolicitarExtratoPix(
+        pix_client=StonePixClient(),
+        parser=PixCsvParser(),
+        publisher=publisher,
+    )
+    return await use_case.execute(reference_date)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -73,13 +95,18 @@ async def lifespan(app: FastAPI):
     app.state.rabbit_channel = channel
     app.state.publisher = RabbitPublisher(channel)
 
-    async def _cron_runner(reference_date: str) -> ExtracaoResultado:
+    async def _cron_cartao(reference_date: str) -> ExtracaoResultado:
         return await executar_extracao_cartao(app.state.publisher, reference_date)
 
-    scheduler = criar_scheduler_cartao(_cron_runner)
+    async def _cron_pix(reference_date: str) -> SolicitarPixResultado:
+        return await executar_solicitacao_pix(app.state.publisher, reference_date)
+
+    scheduler = criar_scheduler_cartao(_cron_cartao)
+    adicionar_job_pix(scheduler, _cron_pix)
     app.state.scheduler = scheduler
     scheduler.start()
     aplicar_estado_inicial(scheduler)
+    aplicar_estado_inicial_pix(scheduler)
 
     yield
 
@@ -183,12 +210,13 @@ async def health(request: Request):
         },
         "pix_merchant_id": settings.STONE_PIX_MERCHANT_ID,
         "cartao_cron": status_cron(getattr(request.app.state, "scheduler", None)),
+        "pix_cron": status_cron_pix(getattr(request.app.state, "scheduler", None)),
     }
 
 
 @app.get("/scheduler/cartao")
 async def get_scheduler_cartao(request: Request):
-    """Status do cron D-1 (ligado/desligado pelo painel)."""
+    """Status do cron cartão D-1 (ligado/desligado pelo painel)."""
     return status_cron(getattr(request.app.state, "scheduler", None))
 
 
@@ -201,6 +229,19 @@ async def post_scheduler_cartao(body: SchedulerToggleBody, request: Request):
     """Ativa ou pausa o cron cartão D-1 (persistido entre restarts)."""
     scheduler = getattr(request.app.state, "scheduler", None)
     return set_cron_enabled(scheduler, body.enabled)
+
+
+@app.get("/scheduler/pix")
+async def get_scheduler_pix(request: Request):
+    """Status do cron PIX D-1 (request + webhook)."""
+    return status_cron_pix(getattr(request.app.state, "scheduler", None))
+
+
+@app.post("/scheduler/pix")
+async def post_scheduler_pix(body: SchedulerToggleBody, request: Request):
+    """Ativa ou pausa o cron PIX D-1 (persistido entre restarts)."""
+    scheduler = getattr(request.app.state, "scheduler", None)
+    return set_cron_pix_enabled(scheduler, body.enabled)
 
 
 @app.post("/cartao/conciliation", response_model=ConciliationResponse)
@@ -239,6 +280,17 @@ async def ingest_cartao_d1(request: Request):
     return _to_response(result, mode="d-1")
 
 
+def _pix_request_response(result: SolicitarPixResultado) -> PixRequestResponse:
+    return PixRequestResponse(
+        reference_date=result.reference_date,
+        status=result.status,
+        source=result.source,
+        message=result.message,
+        published_from_body=result.published_from_body,
+        queue=settings.RABBITMQ_QUEUE_PIX if result.published_from_body else "",
+    )
+
+
 @app.post("/pix/conciliation/request", response_model=PixRequestResponse)
 async def request_pix_extract(
     request: Request,
@@ -249,24 +301,28 @@ async def request_pix_extract(
     Em seguida a Stone envia o arquivo no webhook público POST /pix/webhook.
     """
     publisher = _publisher(request)
-    use_case = SolicitarExtratoPix(
-        pix_client=StonePixClient(),
-        parser=PixCsvParser(),
-        publisher=publisher,
-    )
     try:
-        result = await use_case.execute(date)
+        result = await executar_solicitacao_pix(publisher, date)
     except PixFetchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return PixRequestResponse(
-        reference_date=result.reference_date,
-        status=result.status,
-        source=result.source,
-        message=result.message,
-        published_from_body=result.published_from_body,
-        queue=settings.RABBITMQ_QUEUE_PIX if result.published_from_body else "",
-    )
+    return _pix_request_response(result)
+
+
+@app.post("/pix/conciliation/d-1", response_model=PixRequestResponse)
+async def request_pix_extract_d1(request: Request):
+    """
+    Rotina de produção (manual): solicita extrato PIX do **dia anterior** (D-1).
+    A Stone notifica o webhook com o CSV (assíncrono).
+    """
+    reference_date = data_ontem_iso(settings.CARTAO_CRON_TZ)
+    logger.info("Solicitação PIX D-1 (manual) | date=%s", reference_date)
+    publisher = _publisher(request)
+    try:
+        result = await executar_solicitacao_pix(publisher, reference_date)
+    except PixFetchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _pix_request_response(result)
 
 
 async def _process_pix_webhook_body(publisher: RabbitPublisher, body: bytes) -> None:
