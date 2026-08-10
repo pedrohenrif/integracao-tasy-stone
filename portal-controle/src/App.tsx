@@ -10,6 +10,7 @@ import { LoginLogsPage } from "./pages/LoginLogsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MaquininhasPage } from "./pages/MaquininhasPage";
 import { MapeamentosPage } from "./pages/MapeamentosPage";
+import { AjudaPage } from "./pages/AjudaPage";
 import { SchedulerPage } from "./pages/SchedulerPage";
 import { UsuariosPage } from "./pages/UsuariosPage";
 
@@ -56,23 +57,10 @@ export default function App() {
             </AdminOnly>
           }
         />
-        <Route
-          path="cadastros/maquininhas"
-          element={
-            <AdminOnly>
-              <MaquininhasPage />
-            </AdminOnly>
-          }
-        />
-        <Route
-          path="cadastros/mapeamentos"
-          element={
-            <AdminOnly>
-              <MapeamentosPage />
-            </AdminOnly>
-          }
-        />
+        <Route path="cadastros/maquininhas" element={<MaquininhasPage />} />
+        <Route path="cadastros/mapeamentos" element={<MapeamentosPage />} />
         <Route path="filas" element={<FilasPage />} />
+        <Route path="ajuda" element={<AjudaPage />} />
         <Route
           path="usuarios"
           element={

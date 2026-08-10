@@ -6,6 +6,7 @@ import {
   reprocessarRegistroApi,
   reprocessarSelecionadosApi,
 } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { FiltersBar } from "../components/FiltersBar";
 import { RegistrosTable } from "../components/RegistrosTable";
 import type { Filtros, Registro } from "../types";
@@ -18,6 +19,7 @@ function detailMessage(err: unknown): string {
 type CaixaOpt = { cd_caixa: number; ds_caixa: string };
 
 export function ErrosPage() {
+  const { user } = useAuth();
   const [filtros, setFiltros] = useState<Filtros>({ cd_status: "7", limit: "200" });
   const [caixas, setCaixas] = useState<CaixaOpt[]>([]);
   const [rows, setRows] = useState<Registro[]>([]);
@@ -186,21 +188,23 @@ export function ErrosPage() {
           </button>
           <span className="muted small">Republica na fila a partir do staging</span>
         </div>
-        <div className="reprocess-group">
-          <label className="reprocess-date">
-            Dia
-            <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
-          </label>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled={busy || !dia}
-            onClick={() => void onReprocessDia()}
-          >
-            Reprocessar dia (cartão + PIX)
-          </button>
-          <span className="muted small">Cartão na fila + solicitação PIX (webhook)</span>
-        </div>
+        {user?.admin && (
+          <div className="reprocess-group">
+            <label className="reprocess-date">
+              Dia
+              <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
+            </label>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy || !dia}
+              onClick={() => void onReprocessDia()}
+            >
+              Reprocessar dia (cartão + PIX)
+            </button>
+            <span className="muted small">Cartão na fila + solicitação PIX (webhook)</span>
+          </div>
+        )}
       </div>
 
       <FiltersBar value={filtros} caixas={caixas} onChange={setFiltros} onSubmit={() => void load()} />

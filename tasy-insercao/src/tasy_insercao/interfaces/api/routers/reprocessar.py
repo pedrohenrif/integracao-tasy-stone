@@ -58,7 +58,7 @@ async def api_reprocessar_selecionados(body: ReprocessarSelecionadosBody, user: 
 
 @router.post("/dia")
 async def api_reprocessar_dia(body: ReprocessarDiaBody, user: AdminUser):
-    """Admin: força extração Stone do dia (cartão) via stone-extracao."""
+    """Admin: força extração Stone do dia (cartão + solicitação PIX) via stone-extracao."""
     data_ref = _parse_ref_date(body.date)
     try:
         return await reprocessar_dia(data_ref, user=user)

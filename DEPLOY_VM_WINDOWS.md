@@ -179,6 +179,9 @@ Proxy público (se usado):
 
 Após alterar código do cron: `Restart-Service StoneExtracao` (e `TasyPainel` / `StonePortal` se mudou o painel).
 
+No `.env` do `tasy-insercao` na VM use `APP_ENV=homolog` (ou `production`).  
+**Não** use `local`/`dev` no serviço Windows — isso liga `--reload` e pode causar `Failed to fetch` no portal.
+
 ## Credenciais
 
 Nunca commitar `.env`. Rotacionar `PORTAL_ADMIN_PASS` e `PORTAL_JWT_SECRET` na VM.

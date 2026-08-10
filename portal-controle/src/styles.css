@@ -499,6 +499,48 @@ th {
   background: #f8d6e6;
 }
 
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.help-item {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.9rem;
+  box-shadow: var(--shadow);
+}
+
+.help-item summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--ink);
+  list-style: none;
+  padding: 0.35rem 0;
+}
+
+.help-item summary::-webkit-details-marker { display: none; }
+
+.help-item summary::before {
+  content: "▸ ";
+  color: var(--blue);
+}
+
+.help-item[open] summary::before { content: "▾ "; }
+
+.help-item ul {
+  margin: 0.35rem 0 0.55rem;
+  padding-left: 1.15rem;
+  color: var(--text);
+}
+
+.help-item li {
+  margin: 0.35rem 0;
+  line-height: 1.45;
+}
+
 @media (max-width: 800px) {
   .shell { flex-direction: column; }
   .sidebar { width: 100%; }
