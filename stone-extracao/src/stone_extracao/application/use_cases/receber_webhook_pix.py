@@ -83,15 +83,18 @@ class ReceberWebhookPix:
         terminals: set[str] | None = None,
         limit: int | None = None,
     ) -> WebhookPixResultado:
-        logger.info(
-            "Recebido | pix | fonte=%s | bytes=%s",
-            source,
-            len(raw_body) if isinstance(raw_body, (bytes, str)) else 0,
-        )
+        body_len = len(raw_body) if isinstance(raw_body, (bytes, str)) else 0
+        logger.info("Recebido | pix | fonte=%s | bytes=%s", source, body_len)
 
         payload = parse_webhook_payload(raw_body)
         if payload is not None:
             event_type = str(payload.get("type") or "").strip().lower()
+            keys = sorted(str(k) for k in payload.keys())
+            logger.info(
+                "Webhook PIX | json | type=%s | keys=%s",
+                event_type or "-",
+                ",".join(keys[:30]),
+            )
             if event_type == "validation_notification":
                 logger.info("Webhook PIX | validation_notification ack")
                 return WebhookPixResultado(
@@ -107,10 +110,12 @@ class ReceberWebhookPix:
             if download_url:
                 if self.downloader is None:
                     raise RuntimeError("Downloader PIX não configurado para downloadUrl")
+                ref = payload.get("referenceDate") or payload.get("reference_date")
                 logger.info(
-                    "Webhook PIX | type=%s | baixando CSV | ref=%s",
+                    "Webhook PIX | type=%s | baixando CSV | ref=%s | url=%s",
                     event_type or "pix",
-                    payload.get("referenceDate") or payload.get("reference_date"),
+                    ref,
+                    download_url[:160],
                 )
                 csv_bytes = await self.downloader.download_file(download_url)
                 result = await self._publish_csv(
@@ -120,14 +125,23 @@ class ReceberWebhookPix:
                     limit=limit,
                 )
                 result.event_type = event_type or "pix"
-                result.reference_date = (
-                    str(payload.get("referenceDate") or payload.get("reference_date") or "")
-                    or None
-                )
+                result.reference_date = str(ref or "") or None
                 result.download_url = download_url
+                logger.info(
+                    "Webhook PIX | publicado | ref=%s | parsed=%s | published=%s | samples=%s",
+                    result.reference_date,
+                    result.parsed_count,
+                    result.published_count,
+                    result.sample_ids,
+                )
                 return result
 
             if event_type == "pix":
+                logger.error(
+                    "Webhook PIX | type=pix sem downloadUrl/url | keys=%s | payload=%s",
+                    keys,
+                    str(payload)[:400],
+                )
                 raise ValueError(
                     "Notificação PIX sem downloadUrl/url — payload incompleto da Stone"
                 )

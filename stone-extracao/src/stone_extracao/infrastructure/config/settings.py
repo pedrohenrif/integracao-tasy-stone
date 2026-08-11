@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     CARTAO_CRON_ENABLED: bool = False
     CARTAO_CRON_HOUR: int = 1
     CARTAO_CRON_MINUTE: int = 0
+    # Segunda tentativa D-1 (mesmo dia anterior)
+    CARTAO_CRON_RETRY_HOUR: int = 4
+    CARTAO_CRON_RETRY_MINUTE: int = 0
     CARTAO_CRON_TZ: str = "America/Sao_Paulo"
 
     # Rotina diária PIX D-1 (solicita extrato; Stone entrega no webhook)
@@ -41,6 +44,8 @@ class Settings(BaseSettings):
     PIX_CRON_ENABLED: bool = False
     PIX_CRON_HOUR: int = 1
     PIX_CRON_MINUTE: int = 5
+    PIX_CRON_RETRY_HOUR: int = 4
+    PIX_CRON_RETRY_MINUTE: int = 5
 
     APP_NAME: str = "stone-extracao"
     APP_ENV: str = "homolog"

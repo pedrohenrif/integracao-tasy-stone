@@ -330,6 +330,11 @@ async def reprocessar_dia(
 
         pix_body: dict[str, Any] = {}
         pix_error: str | None = None
+        logger.info(
+            "reprocessar_dia | PIX request | date=%s | url=%s",
+            iso,
+            url_pix,
+        )
         try:
             resp_pix = await client.post(url_pix, params={"date": iso})
             if resp_pix.status_code >= 400:
@@ -340,10 +345,23 @@ async def reprocessar_dia(
                 except Exception:
                     pass
                 pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
+                logger.error(
+                    "reprocessar_dia | PIX falhou | date=%s | http=%s | detail=%s",
+                    iso,
+                    resp_pix.status_code,
+                    detail_pix[:400],
+                )
             else:
                 pix_body = resp_pix.json()
+                logger.info(
+                    "reprocessar_dia | PIX ok | date=%s | status=%s | msg=%s",
+                    iso,
+                    pix_body.get("status"),
+                    str(pix_body.get("message") or "")[:200],
+                )
         except httpx.RequestError as exc:
             pix_error = f"stone-extracao PIX inacessível: {exc}"
+            logger.exception("reprocessar_dia | PIX request error | date=%s", iso)
 
     parsed = body.get("parsed_count")
     published = body.get("published_count")

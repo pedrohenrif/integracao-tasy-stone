@@ -64,11 +64,22 @@ class StonePixClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        logger.info("PIX request | fonte=stone_api | method=POST | url=%s", url)
+        logger.info(
+            "PIX request | início | date=%s | merchant=%s | method=POST | url=%s",
+            reference_date,
+            merchant,
+            url,
+        )
 
         async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
             response = await client.post(url, headers=headers)
             if response.status_code not in (200, 202, 204):
+                logger.error(
+                    "PIX request | falha Stone | date=%s | http=%s | body=%s",
+                    reference_date,
+                    response.status_code,
+                    (response.text or "")[:500],
+                )
                 raise PixFetchError(
                     f"Stone PIX API {response.status_code}: {response.text[:400]}"
                 )
@@ -82,6 +93,16 @@ class StonePixClient:
                 except Exception:
                     body_preview = "<binary>"
 
+            logger.info(
+                "PIX request | aceito | date=%s | http=%s | content_type=%s | "
+                "has_body=%s | body_bytes=%s | preview=%s",
+                reference_date,
+                response.status_code,
+                content_type or "-",
+                bool(raw),
+                len(raw),
+                body_preview[:160].replace("\n", " "),
+            )
             return {
                 "status": "accepted" if response.status_code in (202, 204) else "ok",
                 "http_status": response.status_code,

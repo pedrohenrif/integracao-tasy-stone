@@ -33,8 +33,23 @@ class SolicitarExtratoPix:
         self.publisher = publisher
 
     async def execute(self, reference_date: str) -> SolicitarPixResultado:
-        response = await self.pix_client.request_extract(reference_date)
+        logger.info("SolicitarExtratoPix | início | date=%s", reference_date)
+        try:
+            response = await self.pix_client.request_extract(reference_date)
+        except Exception:
+            logger.exception("SolicitarExtratoPix | erro na Stone | date=%s", reference_date)
+            raise
+
         published = 0
+        http_status = response.get("http_status")
+        logger.info(
+            "SolicitarExtratoPix | resposta | date=%s | status=%s | http=%s | source=%s | has_body=%s",
+            reference_date,
+            response.get("status"),
+            http_status,
+            response.get("source"),
+            response.get("has_body"),
+        )
 
         # Se a API já devolveu o arquivo no body (sample / alguns ambientes), parseia e publica
         raw = response.get("raw_bytes") or b""
@@ -52,11 +67,24 @@ class SolicitarExtratoPix:
                 reference_date,
                 published,
             )
+        elif not looks_like_csv:
+            logger.info(
+                "SolicitarExtratoPix | modo assíncrono | date=%s | "
+                "aguardando webhook POST /pix/webhook (downloadUrl)",
+                reference_date,
+            )
 
-        return SolicitarPixResultado(
+        result = SolicitarPixResultado(
             reference_date=reference_date,
             status=str(response.get("status", "accepted")),
             source=str(response.get("source", "stone_api")),
             message=str(response.get("message", "")),
             published_from_body=published,
         )
+        logger.info(
+            "SolicitarExtratoPix | fim | date=%s | status=%s | published_from_body=%s",
+            result.reference_date,
+            result.status,
+            result.published_from_body,
+        )
+        return result

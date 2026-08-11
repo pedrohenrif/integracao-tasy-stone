@@ -77,12 +77,25 @@ async def executar_solicitacao_pix(
     reference_date: str,
 ) -> SolicitarPixResultado:
     """Caminho único: API manual, D-1 e cron diário PIX (request → webhook)."""
+    logger.info(
+        "PIX pipeline | solicitação | date=%s | merchant=%s",
+        reference_date,
+        settings.STONE_PIX_MERCHANT_ID,
+    )
     use_case = SolicitarExtratoPix(
         pix_client=StonePixClient(),
         parser=PixCsvParser(),
         publisher=publisher,
     )
-    return await use_case.execute(reference_date)
+    result = await use_case.execute(reference_date)
+    logger.info(
+        "PIX pipeline | solicitação ok | date=%s | status=%s | published_from_body=%s | msg=%s",
+        result.reference_date,
+        result.status,
+        result.published_from_body,
+        (result.message or "")[:200],
+    )
+    return result
 
 
 @asynccontextmanager
@@ -300,10 +313,12 @@ async def request_pix_extract(
     Passo 1 do PIX: solicita o extrato na Stone.
     Em seguida a Stone envia o arquivo no webhook público POST /pix/webhook.
     """
+    logger.info("API PIX | POST /pix/conciliation/request | date=%s", date)
     publisher = _publisher(request)
     try:
         result = await executar_solicitacao_pix(publisher, date)
     except PixFetchError as exc:
+        logger.error("API PIX | request falhou | date=%s | %s", date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return _pix_request_response(result)
@@ -316,11 +331,12 @@ async def request_pix_extract_d1(request: Request):
     A Stone notifica o webhook com o CSV (assíncrono).
     """
     reference_date = data_ontem_iso(settings.CARTAO_CRON_TZ)
-    logger.info("Solicitação PIX D-1 (manual) | date=%s", reference_date)
+    logger.info("API PIX | POST /pix/conciliation/d-1 | date=%s", reference_date)
     publisher = _publisher(request)
     try:
         result = await executar_solicitacao_pix(publisher, reference_date)
     except PixFetchError as exc:
+        logger.error("API PIX | d-1 falhou | date=%s | %s", reference_date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _pix_request_response(result)
 
