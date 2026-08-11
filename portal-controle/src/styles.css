@@ -321,6 +321,43 @@ tr.row-selected { background: var(--blue-soft); }
 
 .filters-actions { grid-column: 1 / -1; }
 
+.pager-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin: 0.55rem 0 0.85rem;
+}
+
+.pager-bar-bottom {
+  margin-top: 0.85rem;
+  justify-content: space-between;
+}
+
+.pager-size {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.pager-size select {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+}
+
+.pager-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .cards { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1rem; }
 .cards.compact .card { min-width: 110px; }
 

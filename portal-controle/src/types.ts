@@ -70,4 +70,5 @@ export type Filtros = {
   vl_max?: string;
   obs?: string;
   limit?: string;
+  offset?: string;
 };

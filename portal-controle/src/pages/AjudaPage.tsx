@@ -23,7 +23,7 @@ const BLOCKS: HelpBlock[] = [
     body: [
       "Mostra totais do staging: quantos registros estão integrados, em retry, DLQ ou sem tesouraria.",
       "Também resume quantas mensagens estão nas filas do RabbitMQ.",
-      "Perfil Financeiro: só consulta. O botão de extrair o dia aparece apenas para admin.",
+      "Perfil Financeiro: consulta e cadastros (maquininhas/mapeamentos). O botão de extrair o dia é só admin.",
     ],
   },
   {
@@ -31,6 +31,7 @@ const BLOCKS: HelpBlock[] = [
     title: "Integrações",
     body: [
       "Lista os registros gravados no Postgres (staging).",
+      "Ao abrir, carrega só o dia de ontem (paginado). Amplie as datas nos filtros para ver mais.",
       "Use os filtros: data, caixa, status, tipo (crédito/débito/PIX), bandeira, ID Stone, etc.",
       "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria.",
       "Serve para conferir se um movimento do dia entrou e com qual valor/caixa.",
@@ -79,6 +80,7 @@ const BLOCKS: HelpBlock[] = [
     adminOnly: true,
     body: [
       "Crie usuários do perfil Financeiro (login, nome e senha).",
+      "Financeiro vê Dashboard, Integrações, Erros, Maquininhas, Mapeamentos, Filas e Ajuda.",
       "Financeiro não vê Scheduler, Auditoria, Logs nem o botão de extrair o dia.",
       "Para remover acesso, desative o usuário (soft-delete) — não apaga o histórico.",
     ],
