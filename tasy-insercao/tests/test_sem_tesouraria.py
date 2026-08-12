@@ -37,6 +37,7 @@ def test_sem_tesouraria_insere_movto_sem_caixa():
     tasy.ensure_caixa_saldo_diario.assert_not_called()
     tasy.inserir_caixa_receb.assert_not_called()
     tasy.inserir_documento.assert_not_called()
+    tasy.fechar_caixa_receb.assert_not_called()
     tasy.inserir_movto_cartao_sem_tesouraria.assert_called_once()
     assert staging.update_status.call_args[0][0] == 42
     assert staging.update_status.call_args[0][1] == StatusIntegracao.SEM_TESOURARIA.value

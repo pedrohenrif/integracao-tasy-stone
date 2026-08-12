@@ -65,10 +65,11 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
         EVENT_JOB_MISSED | EVENT_JOB_ERROR | EVENT_JOB_EXECUTED,
     )
 
-    async def _job() -> None:
+    async def _job(slot: str = JOB_ID) -> None:
         reference_date = data_ontem(settings.CARTAO_CRON_TZ)
         logger.info(
-            "Cron cartão D-1 | início | date=%s | tz=%s",
+            "Cron cartão D-1 | início | slot=%s | date=%s | tz=%s",
+            slot,
             reference_date,
             settings.CARTAO_CRON_TZ,
         )
@@ -76,12 +77,17 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
             result = await runner(reference_date)
             published = getattr(result, "published_count", "?")
             logger.info(
-                "Cron cartão D-1 | ok | date=%s | published=%s",
+                "Cron cartão D-1 | ok | slot=%s | date=%s | published=%s",
+                slot,
                 reference_date,
                 published,
             )
         except Exception:
-            logger.exception("Cron cartão D-1 | falha | date=%s", reference_date)
+            logger.exception(
+                "Cron cartão D-1 | falha | slot=%s | date=%s",
+                slot,
+                reference_date,
+            )
 
     for job_id, hour, minute in _slots_cartao():
         scheduler.add_job(
@@ -92,6 +98,7 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
                 timezone=settings.CARTAO_CRON_TZ,
             ),
             id=job_id,
+            kwargs={"slot": job_id},
             replace_existing=True,
             max_instances=1,
             coalesce=True,

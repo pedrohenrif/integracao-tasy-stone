@@ -59,6 +59,36 @@ INSERT INTO caixa_receb(
 ) RETURNING nr_sequencia INTO :id_retornado
 """
 
+# Espelha o botão Tesouraria → Confirmar recebimento (Ctrl+F6).
+# Só usar no fluxo COM caixa_receb (nunca no Sem Tesouraria).
+# Gera movto_trans_financ / libera cartão / preenche dt_fechamento.
+# Se houver troco (vl_troco < 0), chama de novo com ie_troco = 'S' (padrão INTPD).
+CALL_FECHAR_CAIXA_RECEB = """
+DECLARE
+  v_troco NUMBER := 0;
+BEGIN
+  Fechar_caixa_receb(
+    :nr_seq_caixa_rec,
+    'N',
+    'stone',
+    v_troco,
+    TO_DATE(:dt_fechamento, 'YYYY-MM-DD'),
+    'S'
+  );
+  IF v_troco < 0 THEN
+    Fechar_caixa_receb(
+      :nr_seq_caixa_rec,
+      'S',
+      'stone',
+      v_troco,
+      TO_DATE(:dt_fechamento, 'YYYY-MM-DD'),
+      'S'
+    );
+  END IF;
+  :vl_troco := v_troco;
+END;
+"""
+
 INSERT_MOVTO_CARTAO = """
 DECLARE
   v_nr_seq_movto NUMBER;

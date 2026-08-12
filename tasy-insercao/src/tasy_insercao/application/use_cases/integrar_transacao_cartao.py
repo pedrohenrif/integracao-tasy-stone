@@ -24,8 +24,8 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case de domínio: Caixa → Dia → Transação → Documento.
-    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria), sem DLQ.
+    Use case de domínio: Caixa → Dia → Transação → Fechar_caixa_receb (confirmar).
+    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria), sem fechar/caixa.
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
 
@@ -116,26 +116,29 @@ class IntegrarTransacaoCartao:
             nr_seq_saldo = self.tasy.ensure_caixa_saldo_diario(cd_caixa, dt_str)
             nr_seq_receb = self.tasy.inserir_caixa_receb(nr_seq_saldo, dt_str, cd_trans_fin)
             nr_seq_movto = self._inserir_movto(tx, nr_seq_receb, dt_saldo, sem_tesouraria=False)
-            self.tasy.inserir_documento(
-                {
-                    "nr_seq_caixa_rec": nr_seq_receb,
-                    "nr_seq_movto_cartao": nr_seq_movto,
-                    "nr_seq_saldo_caixa": nr_seq_saldo,
-                    "nr_seq_caixa": cd_caixa,
-                    "dt_transacao": dt_saldo,
-                    "nr_seq_trans_financ": cd_trans_fin,
-                    "vl_transacao": to_float_money(tx.vl_transacao),
-                }
-            )
+
+            # Confirmar recebimento (Tesouraria Ctrl+F6).
+            # A procedure gera movto_trans_financ / libera cartão / dt_fechamento.
+            # Não inserir documento manual antes — evita duplicar movimento.
+            # Sem Tesouraria NÃO passa por aqui (não há caixa_receb).
+            vl_troco = self.tasy.fechar_caixa_receb(nr_seq_receb, dt_str)
 
             self.staging.update_status(
-                nr_seq_pg, StatusIntegracao.INTEGRADO.value, "Transação Integrada"
+                nr_seq_pg,
+                StatusIntegracao.INTEGRADO.value,
+                f"Transação Integrada + recebimento confirmado (troco={vl_troco})",
             )
-            logger.info("Inserido | id_stone=%s | caixa_receb=%s", tx.id_stone, nr_seq_receb)
+            logger.info(
+                "Inserido | id_stone=%s | caixa_receb=%s | movto=%s | fechar_ok | troco=%s",
+                tx.id_stone,
+                nr_seq_receb,
+                nr_seq_movto,
+                vl_troco,
+            )
             return ResultadoIntegracao(
                 id_stone=tx.id_stone,
                 status=StatusIntegracao.INTEGRADO,
-                mensagem="Transação Integrada",
+                mensagem="Transação Integrada + recebimento confirmado",
                 retryable=False,
                 nr_sequencia_pg=nr_seq_pg,
                 nr_seq_caixa_receb=nr_seq_receb,

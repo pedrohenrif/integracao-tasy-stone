@@ -72,6 +72,23 @@ class OracleDB:
                 return int(value[0])
             return int(value)
 
+    def execute_returning_number(
+        self,
+        sql: str,
+        params: dict[str, Any] | None = None,
+        *,
+        out_name: str = "vl_troco",
+    ) -> float:
+        with self.cursor() as cur:
+            bind = dict(params or {})
+            out_var = cur.var(oracledb.DB_TYPE_NUMBER)
+            bind[out_name] = out_var
+            cur.execute(sql, bind)
+            value = out_var.getvalue()
+            if isinstance(value, list):
+                return float(value[0] or 0)
+            return float(value or 0)
+
 
 class TasyOracleRepository:
     def __init__(self, db: OracleDB) -> None:
@@ -118,6 +135,32 @@ class TasyOracleRepository:
 
     def inserir_documento(self, params: dict) -> None:
         self.db.execute(ora.INSERT_MOVTO_TRANS_FINANC, params)
+
+    def fechar_caixa_receb(self, nr_seq_caixa_rec: int, dt_fechamento: str) -> float:
+        """
+        Confirma o recebimento no Tasy (botão Tesouraria / Ctrl+F6).
+        Não usar no fluxo Sem Tesouraria (sem caixa_receb).
+        Retorna vl_troco calculado pela procedure.
+        """
+        logger.info(
+            "Fechar_caixa_receb | início | nr_seq_caixa_rec=%s | dt=%s",
+            nr_seq_caixa_rec,
+            dt_fechamento,
+        )
+        vl_troco = self.db.execute_returning_number(
+            ora.CALL_FECHAR_CAIXA_RECEB,
+            {
+                "nr_seq_caixa_rec": nr_seq_caixa_rec,
+                "dt_fechamento": dt_fechamento,
+            },
+            out_name="vl_troco",
+        )
+        logger.info(
+            "Fechar_caixa_receb | ok | nr_seq_caixa_rec=%s | vl_troco=%s",
+            nr_seq_caixa_rec,
+            vl_troco,
+        )
+        return vl_troco
 
     def corrigir_vinculo_documentos_stone(self) -> int:
         """Preenche NR_SEQ_MOVTO_CARTAO / saldo / caixa nos docs Stone órfãos."""
