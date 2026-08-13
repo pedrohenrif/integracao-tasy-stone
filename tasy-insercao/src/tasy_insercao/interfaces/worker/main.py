@@ -114,6 +114,14 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
             )
             return
 
+        if resultado.status == StatusIntegracao.CONFIRMACAO_PENDENTE:
+            logger.warning(
+                "Confirmação pendente | cartao | id_stone=%s | %s",
+                resultado.id_stone,
+                resultado.mensagem,
+            )
+            return
+
         if resultado.retryable and evento.attempt < settings.RETRY_MAX_ATTEMPTS:
             _reset_connections()
             await _schedule_retry_or_dlq(evento, resultado.mensagem, fluxo="cartao", retryable=True)
@@ -152,6 +160,14 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
         if resultado.status == StatusIntegracao.SEM_TESOURARIA:
             logger.info(
                 "Inserido sem tesouraria | pix | id_stone=%s | %s",
+                resultado.id_stone,
+                resultado.mensagem,
+            )
+            return
+
+        if resultado.status == StatusIntegracao.CONFIRMACAO_PENDENTE:
+            logger.warning(
+                "Confirmação pendente | pix | id_stone=%s | %s",
                 resultado.id_stone,
                 resultado.mensagem,
             )

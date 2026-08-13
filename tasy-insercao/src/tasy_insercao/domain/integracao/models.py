@@ -81,6 +81,8 @@ class StatusIntegracao(int, Enum):
     ERRO_DEFINITIVO = 7
     # Movto cartão no Tasy sem caixa_saldo_diario / caixa_receb (serial sem cadastro)
     SEM_TESOURARIA = 8
+    # Movto + documento OK; FECHAR_CAIXA_RECEB falhou (ex.: lote aberto) — reprocessável
+    CONFIRMACAO_PENDENTE = 9
 
 
 class ResultadoIntegracao(BaseModel):

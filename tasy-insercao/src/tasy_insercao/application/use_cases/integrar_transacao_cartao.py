@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case de domínio: Caixa → Dia → Transação → Fechar_caixa_receb (confirmar).
+    Use case de domínio: Caixa → Dia → Transação → Documento → Confirmar (FECHAR).
     Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria), sem fechar/caixa.
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
@@ -43,6 +43,28 @@ class IntegrarTransacaoCartao:
 
         existente = self.staging.get_by_id_stone(tx.id_stone)
         if existente and existente[1] == StatusIntegracao.INTEGRADO.value:
+            # Corrige lote de ontem: status 5 no PG mas documento ausente no Tasy
+            ensure_doc = getattr(self.tasy, "ensure_documento_por_id_stone", None)
+            if ensure_doc is not None:
+                try:
+                    if ensure_doc(tx.id_stone):
+                        self.staging.update_status(
+                            existente[0],
+                            StatusIntegracao.INTEGRADO.value,
+                            "Já integrado; documento criado no reprocesso",
+                        )
+                        return ResultadoIntegracao(
+                            id_stone=tx.id_stone,
+                            status=StatusIntegracao.INTEGRADO,
+                            mensagem="Já integrado; documento criado no reprocesso",
+                            retryable=False,
+                            nr_sequencia_pg=existente[0],
+                        )
+                except Exception:
+                    logger.exception(
+                        "Falha ao backfill documento (já integrado) | id_stone=%s",
+                        tx.id_stone,
+                    )
             return ResultadoIntegracao(
                 id_stone=tx.id_stone,
                 status=StatusIntegracao.INTEGRADO,
@@ -58,6 +80,10 @@ class IntegrarTransacaoCartao:
                 retryable=False,
                 nr_sequencia_pg=existente[0],
             )
+
+        # Reprocesso de confirmação (status 9) ou movto já no Oracle
+        if existente and existente[1] == StatusIntegracao.CONFIRMACAO_PENDENTE.value:
+            return self._confirmar_recebimento_existente(tx, nr_seq_pg=existente[0])
 
         if self.tasy.exists_movto_by_id_stone(tx.id_stone):
             # Movto já no Oracle: se foi caminho sem caixa, mantém status 8
@@ -77,16 +103,12 @@ class IntegrarTransacaoCartao:
                     retryable=False,
                     nr_sequencia_pg=nr,
                 )
-            nr = self.staging.ensure_registro(
-                tx, StatusIntegracao.INTEGRADO.value, "Já existia no Tasy (idempotente)"
+            nr_pg = existente[0] if existente else self.staging.ensure_registro(
+                tx,
+                StatusIntegracao.PROCESSANDO.value,
+                "Reprocessando confirmação",
             )
-            return ResultadoIntegracao(
-                id_stone=tx.id_stone,
-                status=StatusIntegracao.INTEGRADO,
-                mensagem="Já existia no Tasy (idempotente)",
-                retryable=False,
-                nr_sequencia_pg=nr,
-            )
+            return self._confirmar_recebimento_existente(tx, nr_seq_pg=nr_pg)
 
         try:
             config = None
@@ -117,31 +139,25 @@ class IntegrarTransacaoCartao:
             nr_seq_receb = self.tasy.inserir_caixa_receb(nr_seq_saldo, dt_str, cd_trans_fin)
             nr_seq_movto = self._inserir_movto(tx, nr_seq_receb, dt_saldo, sem_tesouraria=False)
 
-            # Confirmar recebimento (Tesouraria Ctrl+F6).
-            # A procedure gera movto_trans_financ / libera cartão / dt_fechamento.
-            # Não inserir documento manual antes — evita duplicar movimento.
-            # Sem Tesouraria NÃO passa por aqui (não há caixa_receb).
-            vl_troco = self.tasy.fechar_caixa_receb(nr_seq_receb, dt_str)
+            # Ordem: documento → FECHAR. Se FECHAR falhar → status 9 (reprocessável).
+            self.tasy.inserir_documento(
+                {
+                    "nr_seq_caixa_rec": nr_seq_receb,
+                    "nr_seq_movto_cartao": nr_seq_movto,
+                    "nr_seq_saldo_caixa": nr_seq_saldo,
+                    "nr_seq_caixa": cd_caixa,
+                    "dt_transacao": dt_saldo,
+                    "nr_seq_trans_financ": cd_trans_fin,
+                    "vl_transacao": to_float_money(tx.vl_transacao),
+                }
+            )
 
-            self.staging.update_status(
-                nr_seq_pg,
-                StatusIntegracao.INTEGRADO.value,
-                f"Transação Integrada + recebimento confirmado (troco={vl_troco})",
-            )
-            logger.info(
-                "Inserido | id_stone=%s | caixa_receb=%s | movto=%s | fechar_ok | troco=%s",
-                tx.id_stone,
-                nr_seq_receb,
-                nr_seq_movto,
-                vl_troco,
-            )
-            return ResultadoIntegracao(
-                id_stone=tx.id_stone,
-                status=StatusIntegracao.INTEGRADO,
-                mensagem="Transação Integrada + recebimento confirmado",
-                retryable=False,
-                nr_sequencia_pg=nr_seq_pg,
-                nr_seq_caixa_receb=nr_seq_receb,
+            return self._aplicar_fechar(
+                tx,
+                nr_seq_pg=nr_seq_pg,
+                nr_seq_receb=nr_seq_receb,
+                dt_str=dt_str,
+                nr_seq_movto=nr_seq_movto,
             )
         except Exception as exc:
             retryable = is_retryable_error(exc)
@@ -165,6 +181,123 @@ class IntegrarTransacaoCartao:
                 mensagem=str(exc),
                 retryable=retryable,
                 nr_sequencia_pg=nr,
+            )
+
+    def _confirmar_recebimento_existente(
+        self, tx: TransacaoCartao, *, nr_seq_pg: int
+    ) -> ResultadoIntegracao:
+        """
+        Cartão/documento já no Tasy: só tenta FECHAR de novo (reprocesso status 9).
+        """
+        ensure_doc = getattr(self.tasy, "ensure_documento_por_id_stone", None)
+        if ensure_doc is not None:
+            try:
+                ensure_doc(tx.id_stone)
+            except Exception:
+                logger.exception(
+                    "Falha ao backfill documento antes do FECHAR | id_stone=%s",
+                    tx.id_stone,
+                )
+
+        get_rec = getattr(self.tasy, "get_caixa_receb_para_confirmar", None)
+        if get_rec is None:
+            self.staging.update_status(
+                nr_seq_pg,
+                StatusIntegracao.INTEGRADO.value,
+                "Já existia no Tasy (idempotente)",
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.INTEGRADO,
+                mensagem="Já existia no Tasy (idempotente)",
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+            )
+
+        info = get_rec(tx.id_stone)
+        if not info:
+            self.staging.update_status(
+                nr_seq_pg,
+                StatusIntegracao.INTEGRADO.value,
+                "Já existia no Tasy sem caixa_receb (idempotente)",
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.INTEGRADO,
+                mensagem="Já existia no Tasy sem caixa_receb (idempotente)",
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+            )
+
+        if info.get("ja_fechado"):
+            msg = "Recebimento já confirmado no Tasy (idempotente)"
+            self.staging.update_status(nr_seq_pg, StatusIntegracao.INTEGRADO.value, msg)
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.INTEGRADO,
+                mensagem=msg,
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+                nr_seq_caixa_receb=int(info["nr_seq_caixa_rec"]),
+            )
+
+        return self._aplicar_fechar(
+            tx,
+            nr_seq_pg=nr_seq_pg,
+            nr_seq_receb=int(info["nr_seq_caixa_rec"]),
+            dt_str=str(info["dt_recebimento"]),
+            nr_seq_movto=None,
+        )
+
+    def _aplicar_fechar(
+        self,
+        tx: TransacaoCartao,
+        *,
+        nr_seq_pg: int,
+        nr_seq_receb: int,
+        dt_str: str,
+        nr_seq_movto: int | None,
+    ) -> ResultadoIntegracao:
+        try:
+            vl_troco = self.tasy.fechar_caixa_receb(nr_seq_receb, dt_str)
+            msg = f"Transação Integrada + recebimento confirmado (troco={vl_troco})"
+            self.staging.update_status(nr_seq_pg, StatusIntegracao.INTEGRADO.value, msg)
+            logger.info(
+                "Inserido | id_stone=%s | caixa_receb=%s | movto=%s | fechar_ok | troco=%s",
+                tx.id_stone,
+                nr_seq_receb,
+                nr_seq_movto,
+                vl_troco,
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.INTEGRADO,
+                mensagem=msg,
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+                nr_seq_caixa_receb=nr_seq_receb,
+            )
+        except Exception as exc:
+            fechar_erro = str(exc)[:300]
+            msg = f"CONFIRMACAO_PENDENTE | {fechar_erro}"
+            logger.warning(
+                "Fechar_caixa_receb falhou | id_stone=%s | caixa_receb=%s | %s",
+                tx.id_stone,
+                nr_seq_receb,
+                fechar_erro,
+            )
+            self.staging.update_status(
+                nr_seq_pg,
+                StatusIntegracao.CONFIRMACAO_PENDENTE.value,
+                msg,
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.CONFIRMACAO_PENDENTE,
+                mensagem=msg,
+                retryable=False,  # não vai para retry/DLQ — reprocessar no portal
+                nr_sequencia_pg=nr_seq_pg,
+                nr_seq_caixa_receb=nr_seq_receb,
             )
 
     def _integrar_sem_tesouraria(self, tx: TransacaoCartao) -> ResultadoIntegracao:

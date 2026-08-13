@@ -163,6 +163,10 @@ export function IntegracoesPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
+          <span>Confirmação pendente</span>
+          <b>{totais.confirmacao_pendente ?? 0}</b>
+        </div>
+        <div className="card">
           <span>Soma</span>
           <b>{money(Number(totais.soma_valor || 0))}</b>
         </div>

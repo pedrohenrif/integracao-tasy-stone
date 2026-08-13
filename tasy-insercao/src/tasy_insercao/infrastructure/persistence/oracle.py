@@ -101,6 +101,59 @@ class TasyOracleRepository:
         )
         return row is not None
 
+    def get_caixa_receb_para_confirmar(self, id_stone: str) -> dict[str, Any] | None:
+        """Retorna nr_seq_caixa_rec + dt para retry do FECHAR, ou None."""
+        row = self.db.fetchone(
+            ora.SELECT_CAIXA_RECEB_PARA_CONFIRMAR,
+            {"ds_observacao": f"%ID stone - {id_stone}%"},
+        )
+        if not row:
+            return None
+        return {
+            "nr_seq_caixa_rec": int(row[0]),
+            "dt_recebimento": str(row[1]),
+            "ja_fechado": str(row[2] or "N").upper() == "S",
+        }
+
+    def ensure_documento_por_id_stone(self, id_stone: str) -> bool:
+        """
+        Se já existe movto+caixa_receb sem movto_trans_financ, cria o documento.
+        Usado no caminho idempotente (ex.: FECHAR falhou depois do insert do cartão).
+        """
+        row = self.db.fetchone(
+            ora.SELECT_MOVTO_SEM_DOCUMENTO_POR_ID_STONE,
+            {"ds_observacao": f"%ID stone - {id_stone}%"},
+        )
+        if not row:
+            return False
+        (
+            nr_seq_movto,
+            nr_seq_caixa_rec,
+            vl_transacao,
+            dt_transacao,
+            nr_seq_saldo_caixa,
+            nr_seq_trans_financ,
+            nr_seq_caixa,
+        ) = row
+        self.inserir_documento(
+            {
+                "nr_seq_caixa_rec": int(nr_seq_caixa_rec),
+                "nr_seq_movto_cartao": int(nr_seq_movto),
+                "nr_seq_saldo_caixa": int(nr_seq_saldo_caixa),
+                "nr_seq_caixa": int(nr_seq_caixa),
+                "dt_transacao": dt_transacao,
+                "nr_seq_trans_financ": int(nr_seq_trans_financ),
+                "vl_transacao": float(vl_transacao),
+            }
+        )
+        logger.info(
+            "Documento backfill | id_stone=%s | movto=%s | caixa_receb=%s",
+            id_stone,
+            nr_seq_movto,
+            nr_seq_caixa_rec,
+        )
+        return True
+
     def ensure_caixa_saldo_diario(self, nr_seq_caixa: int, dt_saldo: str) -> int:
         existente = self.db.fetchone(
             ora.SELECT_EXISTENCIA_CAIXA_SALDO_DIARIO,
@@ -139,6 +192,7 @@ class TasyOracleRepository:
     def fechar_caixa_receb(self, nr_seq_caixa_rec: int, dt_fechamento: str) -> float:
         """
         Confirma o recebimento no Tasy (botão Tesouraria / Ctrl+F6).
+        Chamar somente após inserir movto_trans_financ (documento).
         Não usar no fluxo Sem Tesouraria (sem caixa_receb).
         Retorna vl_troco calculado pela procedure.
         """

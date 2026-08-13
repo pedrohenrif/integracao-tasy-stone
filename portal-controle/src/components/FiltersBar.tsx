@@ -47,6 +47,7 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
             <option value="6">6 — Retry</option>
             <option value="7">7 — DLQ</option>
             <option value="8">8 — Sem Tesouraria</option>
+            <option value="9">9 — Confirmação pendente</option>
             <option value="1">1 — Pendente</option>
             <option value="2">2 — Processando</option>
           </select>

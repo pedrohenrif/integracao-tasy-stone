@@ -19,6 +19,44 @@ WHERE
     AND ROWNUM = 1
 """
 
+# Movto com caixa_receb sem documento (falha no FECHAR / parcial).
+SELECT_MOVTO_SEM_DOCUMENTO_POR_ID_STONE = """
+SELECT
+    m.nr_sequencia,
+    m.nr_seq_caixa_rec,
+    m.vl_transacao,
+    m.dt_transacao,
+    cr.nr_seq_saldo_caixa,
+    cr.nr_seq_trans_financ,
+    csd.nr_seq_caixa
+FROM movto_cartao_cr m
+JOIN caixa_receb cr ON cr.nr_sequencia = m.nr_seq_caixa_rec
+JOIN caixa_saldo_diario csd ON csd.nr_sequencia = cr.nr_seq_saldo_caixa
+WHERE m.ds_observacao LIKE :ds_observacao
+  AND NOT EXISTS (
+      SELECT 1
+      FROM movto_trans_financ d
+      WHERE d.nr_seq_movto_cartao = m.nr_sequencia
+         OR (
+              d.nr_seq_caixa_rec = m.nr_seq_caixa_rec
+          AND d.nr_seq_movto_cartao IS NULL
+         )
+  )
+  AND ROWNUM = 1
+"""
+
+# Para reprocessar só a confirmação (FECHAR), sem reinserir cartão/documento.
+SELECT_CAIXA_RECEB_PARA_CONFIRMAR = """
+SELECT
+    cr.nr_sequencia,
+    TO_CHAR(cr.dt_recebimento, 'YYYY-MM-DD') AS dt_recebimento,
+    CASE WHEN cr.dt_fechamento IS NULL THEN 'N' ELSE 'S' END AS ja_fechado
+FROM movto_cartao_cr m
+JOIN caixa_receb cr ON cr.nr_sequencia = m.nr_seq_caixa_rec
+WHERE m.ds_observacao LIKE :ds_observacao
+  AND ROWNUM = 1
+"""
+
 # Oracle — inserts (espelho GA111)
 INSERT_CAIXA_SALDO_DIARIO = """
 BEGIN
@@ -61,7 +99,8 @@ INSERT INTO caixa_receb(
 
 # Espelha o botão Tesouraria → Confirmar recebimento (Ctrl+F6).
 # Só usar no fluxo COM caixa_receb (nunca no Sem Tesouraria).
-# Gera movto_trans_financ / libera cartão / preenche dt_fechamento.
+# Chamar DEPOIS do insert de movto_trans_financ (documento) — a procedure
+# confirma o recebimento; o documento da tela é o nosso INSERT.
 # Se houver troco (vl_troco < 0), chama de novo com ie_troco = 'S' (padrão INTPD).
 CALL_FECHAR_CAIXA_RECEB = """
 DECLARE

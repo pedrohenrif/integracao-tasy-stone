@@ -96,6 +96,10 @@ export function DashboardPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
+          <span>Confirmação pendente</span>
+          <b>{totais.confirmacao_pendente ?? 0}</b>
+        </div>
+        <div className="card">
           <span>Soma OK</span>
           <b>{money(Number(totais.soma_ok || 0))}</b>
         </div>

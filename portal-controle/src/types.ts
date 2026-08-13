@@ -21,6 +21,7 @@ export type ResumoTotais = {
   retry?: number;
   dlq?: number;
   sem_tesouraria?: number;
+  confirmacao_pendente?: number;
   pendente?: number;
   soma_valor?: number;
   soma_ok?: number;
