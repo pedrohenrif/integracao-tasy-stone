@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     PIX_CRON_RETRY_HOUR: int = 4
     PIX_CRON_RETRY_MINUTE: int = 5
 
+    # Notifica auditoria do portal (tasy-insercao) sobre jobs do scheduler
+    PORTAL_BASE_URL: str = "http://127.0.0.1:8001"
+    PORTAL_INTERNAL_TOKEN: str = ""
+
     APP_NAME: str = "stone-extracao"
     APP_ENV: str = "homolog"
 

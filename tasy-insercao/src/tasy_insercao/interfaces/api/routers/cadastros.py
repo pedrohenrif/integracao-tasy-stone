@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from tasy_insercao.infrastructure.auth.portal_acao_log import registrar_acao_log
 from tasy_insercao.infrastructure.persistence.catalog_queries import (
     atualizar_mapeamento,
     criar_mapeamento,
@@ -71,7 +72,7 @@ async def get_maquininhas(_user: CurrentUser):
 
 
 @router.post("/maquininhas")
-async def post_maquininha(_user: CurrentUser, body: MaquininhaBody):
+async def post_maquininha(user: CurrentUser, body: MaquininhaBody):
     try:
         row = upsert_maquininha(
             nr_serie_maquininha=body.nr_serie_maquininha,
@@ -79,6 +80,13 @@ async def post_maquininha(_user: CurrentUser, body: MaquininhaBody):
             cd_transacao_financeira=body.cd_transacao_financeira,
             ds_maquininha=body.ds_maquininha,
             ie_status=body.ie_status,
+        )
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="cadastro_maquininha",
+            obs=f"serial={body.nr_serie_maquininha} | caixa={body.cd_caixa}",
+            depois=_ser(row),
         )
         return _ser(row)
     except Exception as exc:
@@ -98,12 +106,19 @@ async def get_mapeamentos(_user: CurrentUser):
 
 
 @router.post("/mapeamentos")
-async def post_mapeamento(_user: CurrentUser, body: MapeamentoBody):
+async def post_mapeamento(user: CurrentUser, body: MapeamentoBody):
     try:
         row = criar_mapeamento(
             cd_cartao_bandeira_tasy=body.cd_cartao_bandeira_tasy,
             cd_tipo_transacao=body.cd_tipo_transacao,
             cd_bandeira=body.cd_bandeira,
+        )
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="cadastro_mapeamento",
+            obs=f"tipo={body.cd_tipo_transacao} | bandeira={body.cd_bandeira}",
+            depois=_ser(row),
         )
         return _ser(row)
     except Exception as exc:
@@ -111,7 +126,7 @@ async def post_mapeamento(_user: CurrentUser, body: MapeamentoBody):
 
 
 @router.put("/mapeamentos/{nr_sequencia}")
-async def put_mapeamento(_user: CurrentUser, nr_sequencia: int, body: MapeamentoBody):
+async def put_mapeamento(user: CurrentUser, nr_sequencia: int, body: MapeamentoBody):
     try:
         row = atualizar_mapeamento(
             nr_sequencia,
@@ -121,6 +136,14 @@ async def put_mapeamento(_user: CurrentUser, nr_sequencia: int, body: Mapeamento
         )
         if not row:
             raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="atualizar_mapeamento",
+            nr_seq_registro=nr_sequencia,
+            obs=f"tipo={body.cd_tipo_transacao} | bandeira={body.cd_bandeira}",
+            depois=_ser(row),
+        )
         return _ser(row)
     except HTTPException:
         raise

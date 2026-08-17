@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # stone-extracao (reprocessar dia via POST /cartao/conciliation)
     STONE_EXTRACAO_BASE_URL: str = "http://localhost:8000"
 
+    # Token interno para stone-extracao gravar eventos de scheduler na auditoria
+    PORTAL_INTERNAL_TOKEN: str = ""
+
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"
 

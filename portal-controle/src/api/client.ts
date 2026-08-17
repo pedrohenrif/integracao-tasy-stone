@@ -270,7 +270,39 @@ export type AcaoLog = {
 };
 
 export async function reprocessarLogsApi(limit = 100) {
-  return request<{ items: AcaoLog[] }>(`/api/reprocessar/logs?limit=${limit}`);
+  return request<{
+    items: AcaoLog[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+  }>(`/api/audit/logs?limit=${limit}`);
+}
+
+export type AuditoriaFiltros = {
+  limit?: number;
+  offset?: number;
+  acao?: string;
+  login?: string;
+  id_stone?: string;
+  data_de?: string;
+  data_ate?: string;
+};
+
+export async function auditoriaLogsApi(filtros: AuditoriaFiltros = {}) {
+  const q = new URLSearchParams();
+  q.set("limit", String(filtros.limit ?? 50));
+  q.set("offset", String(filtros.offset ?? 0));
+  if (filtros.acao) q.set("acao", filtros.acao);
+  if (filtros.login) q.set("login", filtros.login);
+  if (filtros.id_stone) q.set("id_stone", filtros.id_stone);
+  if (filtros.data_de) q.set("data_de", filtros.data_de);
+  if (filtros.data_ate) q.set("data_ate", filtros.data_ate);
+  return request<{
+    items: AcaoLog[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>(`/api/audit/logs?${q.toString()}`);
 }
 
 export type SchedulerCartaoStatus = {
@@ -285,6 +317,15 @@ export type SchedulerCartaoStatus = {
   next_run_time?: string | null;
   next_date_preview?: string;
   schedule?: string;
+  last_run_at?: string | null;
+  last_ok?: boolean | null;
+  last_ok_at?: string | null;
+  last_error_at?: string | null;
+  last_error?: string | null;
+  last_reference_date?: string | null;
+  last_published?: number | null;
+  last_slot?: string | null;
+  last_status?: string | null;
 };
 
 export type SchedulerStatus = SchedulerCartaoStatus & {
@@ -310,5 +351,83 @@ export async function setSchedulerPixApi(enabled: boolean) {
   return request<SchedulerStatus>("/api/scheduler/pix", {
     method: "POST",
     body: JSON.stringify({ enabled }),
+  });
+}
+
+export type PurgePreviewItem = {
+  nr_sequencia: number;
+  id_stone: string;
+  cd_caixa: number | null;
+  cd_status: number;
+  vl_transacao: number;
+  dt_movimentacao: string;
+  oracle: {
+    nr_seq_movto: number;
+    nr_seq_caixa_rec: number | null;
+    vl_transacao: number;
+    dt_transacao: string | null;
+    ja_fechado: boolean;
+    qtd_docs: number;
+    qtd_parcelas: number;
+  } | null;
+  can_purge: boolean;
+  blocked_reason: string | null;
+};
+
+export type PurgePreviewResponse = {
+  confirm_token: string;
+  confirm_phrase_required: string;
+  expires_in_seconds: number;
+  nm_usuario: string;
+  allow_fechado: boolean;
+  totais: {
+    total: number;
+    elegiveis: number;
+    bloqueados: number;
+    sem_oracle: number;
+  };
+  items: PurgePreviewItem[];
+  avisos: string[];
+};
+
+export type PurgeResultItem = {
+  nr_sequencia: number;
+  id_stone: string;
+  ok: boolean;
+  deleted?: Record<string, number>;
+  blocked_reason?: string | null;
+  staging_status?: number;
+};
+
+export type PurgeBody = {
+  nm_usuario: string;
+  nr_sequencias?: number[];
+  id_stones?: string[];
+  cd_caixa?: number | null;
+  data_de?: string | null;
+  data_ate?: string | null;
+  id_stone?: string | null;
+  allow_fechado?: boolean;
+};
+
+export async function purgePreviewApi(body: PurgeBody) {
+  return request<PurgePreviewResponse>("/api/purge/preview", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function purgeConfirmApi(
+  body: PurgeBody & { confirm_token: string; confirm_phrase: string },
+) {
+  return request<{
+    nm_usuario: string;
+    allow_fechado: boolean;
+    ok: number;
+    falhas: number;
+    resultados: PurgeResultItem[];
+  }>("/api/purge/confirm", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }

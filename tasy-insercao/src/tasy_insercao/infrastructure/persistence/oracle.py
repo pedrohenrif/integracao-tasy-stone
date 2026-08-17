@@ -61,6 +61,11 @@ class OracleDB:
         with self.cursor() as cur:
             cur.execute(sql, params or {})
 
+    def execute_dml(self, sql: str, params: dict[str, Any] | None = None) -> int:
+        with self.cursor() as cur:
+            cur.execute(sql, params or {})
+            return int(cur.rowcount or 0)
+
     def execute_returning(self, sql: str, params: dict[str, Any] | None = None) -> int:
         with self.cursor() as cur:
             bind = dict(params or {})
@@ -227,3 +232,120 @@ class TasyOracleRepository:
         with self.db.cursor() as cur:
             cur.execute(ora.UPDATE_DOC_STONE_TRANS_E_VALOR)
             return int(cur.rowcount or 0)
+
+    def preview_purge_stone(self, id_stone: str, nm_usuario: str) -> dict[str, Any] | None:
+        """Resolve PKs Oracle do id_stone + nm_usuario. None se não achar movto Stone."""
+        obs = f"%ID stone - {id_stone}%"
+        row = self.db.fetchone(
+            ora.SELECT_PURGE_TARGET,
+            {"nm_usuario": nm_usuario, "ds_observacao": obs},
+        )
+        if not row:
+            return None
+        nr_movto = int(row[0])
+        qtd_parcelas = 0
+        try:
+            prow = self.db.fetchone(
+                ora.SELECT_PURGE_QTD_PARCELAS, {"nr_seq_movto": nr_movto}
+            )
+            qtd_parcelas = int((prow or [0])[0] or 0)
+        except oracledb.DatabaseError as exc:
+            logger.warning("Purge preview parcelas | movto=%s | %s", nr_movto, exc)
+        return {
+            "nr_seq_movto": nr_movto,
+            "nr_seq_caixa_rec": int(row[1]) if row[1] is not None else None,
+            "vl_transacao": float(row[2] or 0),
+            "dt_transacao": str(row[3]) if row[3] is not None else None,
+            "ja_fechado": str(row[4] or "N").upper() == "S",
+            "qtd_docs": int(row[5] or 0),
+            "qtd_parcelas": qtd_parcelas,
+        }
+    def purge_stone_transaction(
+        self,
+        id_stone: str,
+        nm_usuario: str,
+        *,
+        allow_fechado: bool,
+    ) -> dict[str, Any]:
+        """
+        Apaga docs → parcelas → movto → caixa_receb (nunca caixa/saldo).
+        Exige nm_usuario + ID stone na observação.
+        """
+        obs = f"%ID stone - {id_stone}%"
+        target = self.preview_purge_stone(id_stone, nm_usuario)
+        if not target:
+            return {
+                "ok": False,
+                "blocked_reason": "Movto Stone não encontrado no Oracle",
+                "deleted": {},
+            }
+        if target["ja_fechado"] and not allow_fechado:
+            return {
+                "ok": False,
+                "blocked_reason": "Recebimento confirmado (dt_fechamento). Marque permitir confirmados.",
+                "target": target,
+                "deleted": {},
+            }
+
+        nr_movto = target["nr_seq_movto"]
+        nr_receb = target["nr_seq_caixa_rec"]
+        deleted: dict[str, int] = {}
+
+        with self.db.cursor() as cur:
+            cur.execute(
+                ora.DELETE_PURGE_DOCS,
+                {
+                    "nm_usuario": nm_usuario,
+                    "nr_seq_movto": nr_movto,
+                    "nr_seq_caixa_rec": nr_receb,
+                },
+            )
+            deleted["docs"] = int(cur.rowcount or 0)
+
+            try:
+                cur.execute(ora.DELETE_PURGE_PARCELAS, {"nr_seq_movto": nr_movto})
+                deleted["parcelas"] = int(cur.rowcount or 0)
+            except oracledb.DatabaseError as exc:
+                # Coluna/tabela pode variar; sem parcelas segue o movto
+                logger.warning(
+                    "Purge parcelas | id_stone=%s | movto=%s | %s",
+                    id_stone,
+                    nr_movto,
+                    exc,
+                )
+                deleted["parcelas"] = 0
+
+            cur.execute(
+                ora.DELETE_PURGE_MOVTO,
+                {
+                    "nr_seq_movto": nr_movto,
+                    "nm_usuario": nm_usuario,
+                    "ds_observacao": obs,
+                },
+            )
+            deleted["movto"] = int(cur.rowcount or 0)
+            if deleted["movto"] != 1:
+                raise RuntimeError(
+                    f"Purge abortado: movto não removido (rowcount={deleted['movto']}) "
+                    f"id_stone={id_stone}"
+                )
+
+            if nr_receb is not None:
+                cur.execute(
+                    ora.DELETE_PURGE_CAIXA_RECEB,
+                    {
+                        "nr_seq_caixa_rec": nr_receb,
+                        "nm_usuario": nm_usuario,
+                    },
+                )
+                deleted["caixa_receb"] = int(cur.rowcount or 0)
+            else:
+                deleted["caixa_receb"] = 0
+
+        logger.info(
+            "Purge Oracle | id_stone=%s | usuario=%s | deleted=%s",
+            id_stone,
+            nm_usuario,
+            deleted,
+        )
+        return {"ok": True, "target": target, "deleted": deleted}

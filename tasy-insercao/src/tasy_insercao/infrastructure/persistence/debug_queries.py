@@ -220,6 +220,24 @@ def listar_registros_por_ids(nr_sequencias: list[int]) -> list[dict[str, Any]]:
         return list(cur.fetchall())
 
 
+def listar_registros_por_id_stones(id_stones: list[str]) -> list[dict[str, Any]]:
+    ids = sorted({(x or "").strip() for x in id_stones if (x or "").strip()})
+    if not ids:
+        return []
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT {_REGISTRO_COLS}
+            FROM registro_maquininha r
+            LEFT JOIN caixas_tasy c ON c.cd_caixa = r.cd_caixa
+            WHERE r.id_stone = ANY(%(ids)s)
+            ORDER BY r.nr_sequencia
+            """,
+            {"ids": ids},
+        )
+        return list(cur.fetchall())
+
+
 def atualizar_status_registro(nr_sequencia: int, cd_status: int, obs: str) -> None:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(

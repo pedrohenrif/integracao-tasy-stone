@@ -9,8 +9,11 @@ from apscheduler.triggers.cron import CronTrigger
 from stone_extracao.application.services.data_referencia import data_ontem
 from stone_extracao.infrastructure.config.logging import get_logger
 from stone_extracao.infrastructure.config.settings import settings
+from stone_extracao.infrastructure.messaging.portal_audit import notificar_auditoria_portal
 from stone_extracao.infrastructure.store.cron_cartao_state import (
     carregar_cron_enabled,
+    carregar_estado,
+    registrar_resultado_cron,
     salvar_cron_enabled,
 )
 
@@ -28,11 +31,16 @@ ExtracaoRunner = Callable[[str], Awaitable[object]]
 
 def _on_scheduler_event(event) -> None:
     job_id = getattr(event, "job_id", "?")
+    if job_id not in JOB_IDS:
+        return
     if event.code == EVENT_JOB_MISSED:
-        logger.error(
-            "Cron | job perdida (misfire) | job=%s | scheduled=%s",
-            job_id,
-            getattr(event, "scheduled_run_time", None),
+        msg = f"job perdida (misfire) scheduled={getattr(event, 'scheduled_run_time', None)}"
+        logger.error("Cron | %s | job=%s", msg, job_id)
+        registrar_resultado_cron(
+            ok=False,
+            reference_date=data_ontem(settings.CARTAO_CRON_TZ),
+            slot=str(job_id),
+            error=msg,
         )
     elif event.code == EVENT_JOB_ERROR:
         logger.error("Cron | job erro | job=%s | %s", job_id, getattr(event, "exception", None))
@@ -75,18 +83,52 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
         )
         try:
             result = await runner(reference_date)
-            published = getattr(result, "published_count", "?")
+            published_raw = getattr(result, "published_count", None)
+            published = int(published_raw) if published_raw is not None else None
             logger.info(
                 "Cron cartão D-1 | ok | slot=%s | date=%s | published=%s",
                 slot,
                 reference_date,
                 published,
             )
-        except Exception:
+            registrar_resultado_cron(
+                ok=True,
+                reference_date=reference_date,
+                slot=slot,
+                published=published,
+            )
+            await notificar_auditoria_portal(
+                acao="scheduler_cartao_ok",
+                obs=f"date={reference_date} | slot={slot} | published={published}",
+                depois={
+                    "flow": "cartao",
+                    "reference_date": reference_date,
+                    "slot": slot,
+                    "published": published,
+                },
+            )
+        except Exception as exc:
             logger.exception(
                 "Cron cartão D-1 | falha | slot=%s | date=%s",
                 slot,
                 reference_date,
+            )
+            err = str(exc)[:500]
+            registrar_resultado_cron(
+                ok=False,
+                reference_date=reference_date,
+                slot=slot,
+                error=err,
+            )
+            await notificar_auditoria_portal(
+                acao="scheduler_cartao_erro",
+                obs=f"date={reference_date} | slot={slot} | {err}",
+                depois={
+                    "flow": "cartao",
+                    "reference_date": reference_date,
+                    "slot": slot,
+                    "error": err,
+                },
             )
 
     for job_id, hour, minute in _slots_cartao():
@@ -162,6 +204,7 @@ def status_cron(scheduler: AsyncIOScheduler | None) -> dict[str, Any]:
                 next_runs.append(nxt)
 
     schedule = " + ".join(f"{h:02d}:{m:02d}" for _, h, m in _slots_cartao())
+    estado = carregar_estado()
     return {
         "enabled": enabled,
         "running": bool(scheduler and scheduler.running),
@@ -175,4 +218,12 @@ def status_cron(scheduler: AsyncIOScheduler | None) -> dict[str, Any]:
         "next_date_preview": data_ontem(settings.CARTAO_CRON_TZ),
         "schedule": schedule,
         "slots": slots,
+        "last_run_at": estado.get("last_run_at"),
+        "last_ok": estado.get("last_ok"),
+        "last_ok_at": estado.get("last_ok_at"),
+        "last_error_at": estado.get("last_error_at"),
+        "last_error": estado.get("last_error"),
+        "last_reference_date": estado.get("last_reference_date"),
+        "last_published": estado.get("last_published"),
+        "last_slot": estado.get("last_slot"),
     }

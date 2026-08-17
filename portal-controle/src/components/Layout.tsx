@@ -11,6 +11,7 @@ const links = [
   { to: "/ajuda", label: "Ajuda" },
   { to: "/auditoria", label: "Auditoria", admin: true },
   { to: "/scheduler", label: "Scheduler", admin: true },
+  { to: "/purge", label: "Purge Stone", admin: true },
   { to: "/usuarios", label: "Usuários", admin: true },
   { to: "/acessos", label: "Logs de acesso", admin: true },
 ];

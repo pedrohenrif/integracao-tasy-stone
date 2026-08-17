@@ -368,3 +368,76 @@ WHERE d.nm_usuario = 'stone'
       WHERE m.nr_seq_caixa_rec = d.nr_seq_caixa_rec
   )
 """
+
+# --- Purge admin (somente nm_usuario + ID stone; nunca caixa / saldo diário) ---
+
+SELECT_PURGE_TARGET = """
+SELECT
+    m.nr_sequencia,
+    m.nr_seq_caixa_rec,
+    m.vl_transacao,
+    TO_CHAR(m.dt_transacao, 'YYYY-MM-DD'),
+    CASE
+      WHEN cr.nr_sequencia IS NULL THEN 'N'
+      WHEN cr.dt_fechamento IS NULL THEN 'N'
+      ELSE 'S'
+    END,
+    (
+      SELECT COUNT(*)
+      FROM movto_trans_financ d
+      WHERE d.nm_usuario = :nm_usuario
+        AND (
+          d.nr_seq_movto_cartao = m.nr_sequencia
+          OR (
+            m.nr_seq_caixa_rec IS NOT NULL
+            AND d.nr_seq_caixa_rec = m.nr_seq_caixa_rec
+          )
+        )
+    )
+FROM movto_cartao_cr m
+LEFT JOIN caixa_receb cr
+  ON cr.nr_sequencia = m.nr_seq_caixa_rec
+ AND cr.nm_usuario = :nm_usuario
+WHERE m.nm_usuario = :nm_usuario
+  AND m.ds_observacao LIKE :ds_observacao
+  AND ROWNUM = 1
+"""
+
+SELECT_PURGE_QTD_PARCELAS = """
+SELECT COUNT(*)
+FROM cartao_cr_parcela
+WHERE nr_seq_movto = :nr_seq_movto
+"""
+
+DELETE_PURGE_DOCS = """
+DELETE FROM movto_trans_financ d
+WHERE d.nm_usuario = :nm_usuario
+  AND (
+    d.nr_seq_movto_cartao = :nr_seq_movto
+    OR d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  )
+"""
+
+DELETE_PURGE_PARCELAS = """
+DELETE FROM cartao_cr_parcela
+WHERE nr_seq_movto = :nr_seq_movto
+"""
+
+DELETE_PURGE_MOVTO = """
+DELETE FROM movto_cartao_cr
+WHERE nr_sequencia = :nr_seq_movto
+  AND nm_usuario = :nm_usuario
+  AND ds_observacao LIKE :ds_observacao
+"""
+
+DELETE_PURGE_CAIXA_RECEB = """
+DELETE FROM caixa_receb cr
+WHERE cr.nr_sequencia = :nr_seq_caixa_rec
+  AND cr.nm_usuario = :nm_usuario
+  AND NOT EXISTS (
+    SELECT 1 FROM movto_cartao_cr m WHERE m.nr_seq_caixa_rec = cr.nr_sequencia
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM movto_trans_financ d WHERE d.nr_seq_caixa_rec = cr.nr_sequencia
+  )
+"""

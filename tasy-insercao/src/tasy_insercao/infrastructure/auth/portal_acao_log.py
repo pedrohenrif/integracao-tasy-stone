@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
@@ -52,10 +53,60 @@ def registrar_acao_log(
         conn.commit()
 
 
-def listar_acao_logs(limit: int = 100) -> list[dict[str, Any]]:
+def _serialize_row(r: dict[str, Any]) -> dict[str, Any]:
+    item = dict(r)
+    for key in ("ds_antes", "ds_depois"):
+        val = item.get(key)
+        if isinstance(val, (bytes, str)):
+            try:
+                item[key] = json.loads(val) if isinstance(val, (bytes, bytearray)) else json.loads(val)
+            except (TypeError, json.JSONDecodeError):
+                pass
+    if hasattr(item.get("dt_evento"), "isoformat"):
+        item["dt_evento"] = item["dt_evento"].isoformat(sep=" ", timespec="seconds")
+    return item
+
+
+def listar_acao_logs(
+    limit: int = 50,
+    offset: int = 0,
+    *,
+    acao: str | None = None,
+    login: str | None = None,
+    id_stone: str | None = None,
+    data_de: date | None = None,
+    data_ate: date | None = None,
+) -> dict[str, Any]:
+    clauses = ["1=1"]
+    params: dict[str, Any] = {
+        "limit": max(1, min(int(limit), 200)),
+        "offset": max(0, int(offset)),
+    }
+    if acao:
+        clauses.append("l.ds_acao ILIKE %(acao)s")
+        params["acao"] = f"%{acao.strip()}%"
+    if login:
+        clauses.append("l.ds_login ILIKE %(login)s")
+        params["login"] = f"%{login.strip()}%"
+    if id_stone:
+        clauses.append("l.id_stone ILIKE %(id_stone)s")
+        params["id_stone"] = f"%{id_stone.strip()}%"
+    if data_de is not None:
+        clauses.append("l.dt_evento >= %(data_de)s")
+        params["data_de"] = datetime.combine(data_de, datetime.min.time())
+    if data_ate is not None:
+        clauses.append("l.dt_evento < %(data_ate)s + INTERVAL '1 day'")
+        params["data_ate"] = data_ate
+
+    where_sql = " AND ".join(clauses)
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"SELECT COUNT(*) AS total FROM portal_acao_log l WHERE {where_sql}",
+            params,
+        )
+        total = int((cur.fetchone() or {}).get("total") or 0)
+        cur.execute(
+            f"""
             SELECT
                 l.nr_sequencia,
                 l.nr_seq_usuario,
@@ -70,25 +121,17 @@ def listar_acao_logs(limit: int = 100) -> list[dict[str, Any]]:
                 u.ds_nome
             FROM portal_acao_log l
             LEFT JOIN portal_usuario u ON u.nr_sequencia = l.nr_seq_usuario
+            WHERE {where_sql}
             ORDER BY l.dt_evento DESC
-            LIMIT %(limit)s
+            LIMIT %(limit)s OFFSET %(offset)s
             """,
-            {"limit": max(1, min(limit, 500))},
+            params,
         )
-        rows = list(cur.fetchall())
+        rows = [_serialize_row(dict(r)) for r in cur.fetchall()]
 
-    # serializa JSONB / datetime para API
-    out: list[dict[str, Any]] = []
-    for r in rows:
-        item = dict(r)
-        for key in ("ds_antes", "ds_depois"):
-            val = item.get(key)
-            if isinstance(val, (bytes, str)):
-                try:
-                    item[key] = json.loads(val) if isinstance(val, (bytes, bytearray)) else json.loads(val)
-                except (TypeError, json.JSONDecodeError):
-                    pass
-        if hasattr(item.get("dt_evento"), "isoformat"):
-            item["dt_evento"] = item["dt_evento"].isoformat(sep=" ", timespec="seconds")
-        out.append(item)
-    return out
+    return {
+        "items": rows,
+        "total": total,
+        "limit": params["limit"],
+        "offset": params["offset"],
+    }

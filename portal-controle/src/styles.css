@@ -496,6 +496,33 @@ th {
 
 .form-card h2 { margin: 0 0 0.6rem; font-size: 1rem; color: var(--ink); }
 
+.form-card .block-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0.6rem 0;
+}
+
+.form-card textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.form-card .check-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+  margin: 0.5rem 0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

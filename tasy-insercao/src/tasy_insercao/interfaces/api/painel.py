@@ -2,18 +2,25 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from tasy_insercao.infrastructure.auth.portal_auth import ensure_admin_seed
+from tasy_insercao.infrastructure.auth.portal_auth import (
+    decode_token,
+    ensure_admin_seed,
+    get_user_by_id,
+)
 from tasy_insercao.infrastructure.config.logging import get_logger, setup_logging
 from tasy_insercao.infrastructure.config.settings import settings
+from tasy_insercao.interfaces.api.routers import audit as audit_router
 from tasy_insercao.interfaces.api.routers import auth as auth_router
 from tasy_insercao.interfaces.api.routers import cadastros as cadastros_router
 from tasy_insercao.interfaces.api.routers import filas as filas_router
 from tasy_insercao.interfaces.api.routers import integracoes as integracoes_router
+from tasy_insercao.interfaces.api.routers import purge as purge_router
 from tasy_insercao.interfaces.api.routers import reprocessar as reprocessar_router
 from tasy_insercao.interfaces.api.routers import scheduler as scheduler_router
+from tasy_insercao.interfaces.api.routers.audit import registrar_api_acesso
 
 logger = get_logger(__name__)
 
@@ -47,6 +54,35 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def audit_mutations(request: Request, call_next):
+        response = await call_next(request)
+        try:
+            if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+                return response
+            auth = request.headers.get("Authorization") or ""
+            user_ctx = None
+            if auth.lower().startswith("bearer "):
+                try:
+                    payload = decode_token(auth.split(" ", 1)[1].strip())
+                    row = get_user_by_id(int(payload["sub"]))
+                    if row and row.get("ie_ativo") == "S":
+                        user_ctx = {
+                            "nr_sequencia": row["nr_sequencia"],
+                            "ds_login": row["ds_login"],
+                        }
+                except Exception:
+                    user_ctx = None
+            if user_ctx:
+                registrar_api_acesso(
+                    request=request,
+                    user=user_ctx,
+                    status_code=int(response.status_code),
+                )
+        except Exception:
+            logger.debug("Falha ao registrar auditoria de API", exc_info=True)
+        return response
+
     @app.get("/health")
     async def health():
         return {
@@ -61,6 +97,8 @@ def create_app() -> FastAPI:
     app.include_router(filas_router.router)
     app.include_router(cadastros_router.router)
     app.include_router(reprocessar_router.router)
+    app.include_router(purge_router.router)
+    app.include_router(audit_router.router)
     app.include_router(scheduler_router.router)
     return app
 

@@ -94,6 +94,29 @@ const BLOCKS: HelpBlock[] = [
       "Cartão: baixa o extrato de ontem e publica na fila.",
       "PIX: solicita o extrato de ontem; a Stone envia o arquivo no webhook.",
       "Horários vêm do .env na VM (CARTAO_CRON_* e PIX_CRON_*).",
+      "A tela mostra a última execução (OK/ERRO) e a mensagem de falha, quando houver.",
+      "Falhas do cron também entram na Auditoria (login sistema), se PORTAL_INTERNAL_TOKEN estiver configurado.",
+    ],
+  },
+  {
+    id: "auditoria",
+    title: "Auditoria (somente admin)",
+    adminOnly: true,
+    body: [
+      "Lista ações do portal e do sistema com filtros (ação, login, ID Stone, datas) e paginação.",
+      "Inclui reprocesso, purge, cadastros, usuários, mutações de API e jobs do scheduler.",
+      "Login de usuários continua em Logs de acesso; aqui fica o rastreio operacional.",
+    ],
+  },
+  {
+    id: "purge",
+    title: "Purge Stone (somente admin)",
+    adminOnly: true,
+    body: [
+      "Apaga no Tasy só o que a integração criou (usuário Oracle + ID stone), sem tocar no caixa/saldo diário.",
+      "Sempre faça Preview antes. Confirme digitando EXCLUIR.",
+      "Recebimentos já confirmados (dt_fechamento) ficam bloqueados salvo checkbox explícito.",
+      "Após o purge, o staging volta para pendente com obs PURGED_BY_ADMIN (pode reintegrar).",
     ],
   },
   {

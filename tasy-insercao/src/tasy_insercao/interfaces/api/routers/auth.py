@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from tasy_insercao.infrastructure.auth.portal_acao_log import registrar_acao_log
 from tasy_insercao.infrastructure.auth.portal_auth import (
     AuthError,
     authenticate,
@@ -132,7 +133,7 @@ async def api_listar_usuarios(_user: AdminUser):
 
 
 @router.post("/usuarios")
-async def api_criar_usuario(_user: AdminUser, body: UsuarioCreateBody):
+async def api_criar_usuario(user: AdminUser, body: UsuarioCreateBody):
     try:
         row = criar_usuario(
             login=body.login,
@@ -142,6 +143,13 @@ async def api_criar_usuario(_user: AdminUser, body: UsuarioCreateBody):
         )
     except AuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    registrar_acao_log(
+        user_id=user.get("nr_sequencia"),
+        login=str(user.get("ds_login") or ""),
+        acao="usuario_criar",
+        obs=f"login={body.login} | admin={body.admin}",
+        depois=_user_public(row),
+    )
     return _user_public(row)
 
 
@@ -162,6 +170,14 @@ async def api_atualizar_usuario(user_id: int, body: UsuarioUpdateBody, user: Adm
     except AuthError as exc:
         status = 404 if "não encontrado" in str(exc).lower() else 400
         raise HTTPException(status_code=status, detail=str(exc)) from exc
+    registrar_acao_log(
+        user_id=user.get("nr_sequencia"),
+        login=str(user.get("ds_login") or ""),
+        acao="usuario_atualizar",
+        nr_seq_registro=user_id,
+        obs=f"alvo={row.get('ds_login')}",
+        depois=_user_public(row),
+    )
     return _user_public(row)
 
 
@@ -174,4 +190,12 @@ async def api_desativar_usuario(user_id: int, user: AdminUser):
     except AuthError as exc:
         status = 404 if "não encontrado" in str(exc).lower() else 400
         raise HTTPException(status_code=status, detail=str(exc)) from exc
+    registrar_acao_log(
+        user_id=user.get("nr_sequencia"),
+        login=str(user.get("ds_login") or ""),
+        acao="usuario_desativar",
+        nr_seq_registro=user_id,
+        obs=f"alvo={row.get('ds_login')}",
+        depois=_user_public(row),
+    )
     return _user_public(row)

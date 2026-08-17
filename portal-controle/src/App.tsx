@@ -11,6 +11,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MaquininhasPage } from "./pages/MaquininhasPage";
 import { MapeamentosPage } from "./pages/MapeamentosPage";
 import { AjudaPage } from "./pages/AjudaPage";
+import { PurgePage } from "./pages/PurgePage";
 import { SchedulerPage } from "./pages/SchedulerPage";
 import { UsuariosPage } from "./pages/UsuariosPage";
 
@@ -54,6 +55,14 @@ export default function App() {
           element={
             <AdminOnly>
               <SchedulerPage />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="purge"
+          element={
+            <AdminOnly>
+              <PurgePage />
             </AdminOnly>
           }
         />

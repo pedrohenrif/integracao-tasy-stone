@@ -21,6 +21,7 @@ function CronCard({
   busy: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
+  const lastFailed = status?.last_ok === false;
   return (
     <div className="form-card">
       <h2>{title}</h2>
@@ -52,7 +53,31 @@ function CronCard({
                   : "—"}
               </b>
             </div>
+            <div className={`card ${lastFailed ? "dlq" : status.last_ok ? "ok" : ""}`}>
+              <span>Última execução</span>
+              <b>
+                {status.last_ok === true
+                  ? "OK"
+                  : status.last_ok === false
+                    ? "ERRO"
+                    : "—"}
+              </b>
+            </div>
+            <div className="card">
+              <span>Último OK</span>
+              <b>{status.last_ok_at ? status.last_ok_at.replace("T", " ").slice(0, 19) : "—"}</b>
+            </div>
+            <div className="card">
+              <span>Ref. D-1</span>
+              <b>{status.last_reference_date || "—"}</b>
+            </div>
           </div>
+          {lastFailed && status.last_error && (
+            <p className="error" style={{ marginTop: "0.6rem" }}>
+              Último erro ({status.last_error_at?.replace("T", " ").slice(0, 19) || "?"}
+              {status.last_slot ? ` · ${status.last_slot}` : ""}): {status.last_error}
+            </p>
+          )}
           <p className="muted small">{hint}</p>
           <div className="reprocess-group" style={{ marginTop: "0.75rem" }}>
             <button

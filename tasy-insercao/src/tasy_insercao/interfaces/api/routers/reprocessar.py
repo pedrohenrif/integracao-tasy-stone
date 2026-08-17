@@ -87,9 +87,24 @@ async def api_reprocessar_registro(body: ReprocessarRegistroBody, user: CurrentU
 @router.get("/logs")
 async def api_reprocessar_logs(
     _user: AdminUser,
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    acao: str | None = Query(default=None),
+    login: str | None = Query(default=None),
+    id_stone: str | None = Query(default=None),
+    data_de: date | None = Query(default=None),
+    data_ate: date | None = Query(default=None),
 ):
+    """Compat: preferir GET /api/audit/logs."""
     try:
-        return {"items": listar_acao_logs(limit)}
+        return listar_acao_logs(
+            limit=limit,
+            offset=offset,
+            acao=acao,
+            login=login,
+            id_stone=id_stone,
+            data_de=data_de,
+            data_ate=data_ate,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
