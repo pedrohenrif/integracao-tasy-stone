@@ -268,7 +268,8 @@ class TasyOracleRepository:
         allow_fechado: bool,
     ) -> dict[str, Any]:
         """
-        Apaga docs → parcelas → movto → caixa_receb (nunca caixa/saldo).
+        Ordem: parcelas → movto_cartao → documento → caixa_receb (nunca caixa/saldo).
+        Documento é desvinculado do movto antes de apagar o cartão (FK).
         Exige nm_usuario + ID stone na observação.
         """
         obs = f"%ID stone - {id_stone}%"
@@ -292,21 +293,11 @@ class TasyOracleRepository:
         deleted: dict[str, int] = {}
 
         with self.db.cursor() as cur:
-            cur.execute(
-                ora.DELETE_PURGE_DOCS,
-                {
-                    "nm_usuario": nm_usuario,
-                    "nr_seq_movto": nr_movto,
-                    "nr_seq_caixa_rec": nr_receb,
-                },
-            )
-            deleted["docs"] = int(cur.rowcount or 0)
-
+            # 1) Parcelas do movto (filho do cartão)
             try:
                 cur.execute(ora.DELETE_PURGE_PARCELAS, {"nr_seq_movto": nr_movto})
                 deleted["parcelas"] = int(cur.rowcount or 0)
             except oracledb.DatabaseError as exc:
-                # Coluna/tabela pode variar; sem parcelas segue o movto
                 logger.warning(
                     "Purge parcelas | id_stone=%s | movto=%s | %s",
                     id_stone,
@@ -315,6 +306,17 @@ class TasyOracleRepository:
                 )
                 deleted["parcelas"] = 0
 
+            # 2) Desvincula documento do movto (evita FK ao apagar cartão antes do doc)
+            cur.execute(
+                ora.UNLINK_PURGE_DOCS_MOVTO,
+                {
+                    "nm_usuario": nm_usuario,
+                    "nr_seq_movto": nr_movto,
+                    "nr_seq_caixa_rec": nr_receb,
+                },
+            )
+
+            # 3) Movto cartão
             cur.execute(
                 ora.DELETE_PURGE_MOVTO,
                 {
@@ -330,6 +332,18 @@ class TasyOracleRepository:
                     f"id_stone={id_stone}"
                 )
 
+            # 4) Documento (movto_trans_financ)
+            cur.execute(
+                ora.DELETE_PURGE_DOCS,
+                {
+                    "nm_usuario": nm_usuario,
+                    "nr_seq_movto": nr_movto,
+                    "nr_seq_caixa_rec": nr_receb,
+                },
+            )
+            deleted["docs"] = int(cur.rowcount or 0)
+
+            # 5) Recebimento (só se não restar movto/doc ligado)
             if nr_receb is not None:
                 cur.execute(
                     ora.DELETE_PURGE_CAIXA_RECEB,

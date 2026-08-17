@@ -409,6 +409,17 @@ FROM cartao_cr_parcela
 WHERE nr_seq_movto = :nr_seq_movto
 """
 
+# Desvincula doc do movto para permitir apagar cartão antes do documento (FK).
+UNLINK_PURGE_DOCS_MOVTO = """
+UPDATE movto_trans_financ d
+SET d.nr_seq_movto_cartao = NULL
+WHERE d.nm_usuario = :nm_usuario
+  AND (
+    d.nr_seq_movto_cartao = :nr_seq_movto
+    OR d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  )
+"""
+
 DELETE_PURGE_DOCS = """
 DELETE FROM movto_trans_financ d
 WHERE d.nm_usuario = :nm_usuario
