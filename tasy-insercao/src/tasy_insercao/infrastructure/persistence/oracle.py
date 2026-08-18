@@ -121,38 +121,25 @@ class TasyOracleRepository:
         }
 
     def ensure_documento_por_id_stone(self, id_stone: str) -> bool:
-        """
-        Se já existe movto+caixa_receb sem movto_trans_financ, cria o documento.
-        Usado no caminho idempotente (ex.: FECHAR falhou depois do insert do cartão).
-        """
-        row = self.db.fetchone(
-            ora.SELECT_MOVTO_SEM_DOCUMENTO_POR_ID_STONE,
-            {"ds_observacao": f"%ID stone - {id_stone}%"},
-        )
-        if not row:
+        """Garante documento agregado (soma) do recebimento ligado ao id_stone."""
+        info = self.get_caixa_receb_para_confirmar(id_stone)
+        if not info:
             return False
-        (
-            nr_seq_movto,
-            nr_seq_caixa_rec,
-            vl_transacao,
-            dt_transacao,
-            _nr_seq_saldo_caixa,
-            nr_seq_trans_financ,
-            _nr_seq_caixa,
-        ) = row
-        self.inserir_documento(
-            {
-                "nr_seq_caixa_rec": int(nr_seq_caixa_rec),
-                "nr_seq_movto_cartao": int(nr_seq_movto),
-                "dt_transacao": dt_transacao,
-                "nr_seq_trans_financ": int(nr_seq_trans_financ),
-                "vl_transacao": float(vl_transacao),
-            }
+        nr_seq_caixa_rec = int(info["nr_seq_caixa_rec"])
+        cr = self.db.fetchone(
+            ora.SELECT_CAIXA_RECEB_TRANS_E_DATA,
+            {"nr_seq_caixa_rec": nr_seq_caixa_rec},
+        )
+        if not cr or cr[0] is None:
+            return False
+        self.upsert_documento_agregado(
+            nr_seq_caixa_rec=nr_seq_caixa_rec,
+            nr_seq_trans_financ=int(cr[0]),
+            dt_transacao=cr[1],
         )
         logger.info(
-            "Documento backfill | id_stone=%s | movto=%s | caixa_receb=%s",
+            "Documento agregado | id_stone=%s | caixa_receb=%s",
             id_stone,
-            nr_seq_movto,
             nr_seq_caixa_rec,
         )
         return True
@@ -169,6 +156,18 @@ class TasyOracleRepository:
             {"nr_seq_caixa": nr_seq_caixa, "dt_saldo": dt_saldo},
         )
 
+    def ensure_caixa_receb_aberto(
+        self, nr_seq_saldo: int, dt: str, cd_trans_fin: int
+    ) -> int:
+        """Reusa recebimento Stone aberto do saldo (caixa+dia); cria se não houver."""
+        row = self.db.fetchone(
+            ora.SELECT_CAIXA_RECEB_ABERTO_STONE,
+            {"nr_seq_saldo_caixa": nr_seq_saldo},
+        )
+        if row:
+            return int(row[0])
+        return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)
+
     def inserir_caixa_receb(self, nr_seq_saldo: int, dt: str, cd_trans_fin: int) -> int:
         return self.db.execute_returning(
             ora.INSERT_CAIXA_RECEB,
@@ -178,6 +177,62 @@ class TasyOracleRepository:
                 "nr_seq_trans_financ": cd_trans_fin,
             },
         )
+
+    def upsert_documento_agregado(
+        self,
+        *,
+        nr_seq_caixa_rec: int,
+        nr_seq_trans_financ: int,
+        dt_transacao: Any,
+    ) -> float:
+        """1 documento por recebimento = soma dos movto_cartao_cr."""
+        soma_row = self.db.fetchone(
+            ora.SELECT_SOMA_MOVTO_POR_CAIXA_RECEB,
+            {"nr_seq_caixa_rec": nr_seq_caixa_rec},
+        )
+        vl = float((soma_row or [0])[0] or 0)
+        doc = self.db.fetchone(
+            ora.SELECT_DOC_AGREGADO_POR_CAIXA_RECEB,
+            {"nr_seq_caixa_rec": nr_seq_caixa_rec},
+        )
+        if doc:
+            self.db.execute(
+                ora.UPDATE_DOC_AGREGADO_VALOR,
+                {
+                    "vl_transacao": vl,
+                    "nr_seq_trans_financ": nr_seq_trans_financ,
+                    "nr_seq_doc": int(doc[0]),
+                },
+            )
+            logger.info(
+                "Documento agregado atualizado | caixa_receb=%s | doc=%s | vl=%s",
+                nr_seq_caixa_rec,
+                doc[0],
+                vl,
+            )
+        else:
+            self.db.execute(
+                ora.INSERT_MOVTO_TRANS_FINANC_AGREGADO,
+                {
+                    "nr_seq_caixa_rec": nr_seq_caixa_rec,
+                    "dt_transacao": dt_transacao,
+                    "nr_seq_trans_financ": nr_seq_trans_financ,
+                    "vl_transacao": vl,
+                },
+            )
+            logger.info(
+                "Documento agregado criado | caixa_receb=%s | vl=%s",
+                nr_seq_caixa_rec,
+                vl,
+            )
+        return vl
+
+    def count_movtos_caixa_receb(self, nr_seq_caixa_rec: int) -> int:
+        row = self.db.fetchone(
+            ora.SELECT_QTD_MOVTO_POR_CAIXA_RECEB,
+            {"nr_seq_caixa_rec": nr_seq_caixa_rec},
+        )
+        return int((row or [0])[0] or 0)
 
     def inserir_movto_cartao(self, params: dict) -> int:
         return self.db.execute_returning(ora.INSERT_MOVTO_CARTAO, params)

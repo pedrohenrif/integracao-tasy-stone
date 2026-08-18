@@ -24,8 +24,9 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case de domínio: Caixa → Dia → Transação → Documento → Confirmar (FECHAR).
-    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria), sem fechar/caixa.
+    Use case: Caixa → Dia → Recebimento (1 por caixa/dia) → Cartão (N) →
+    Documento agregado (soma) → (FECHAR só sob demanda / status 9).
+    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
 
@@ -141,27 +142,56 @@ class IntegrarTransacaoCartao:
             )
 
             nr_seq_saldo = self.tasy.ensure_caixa_saldo_diario(cd_caixa, dt_str)
-            nr_seq_receb = self.tasy.inserir_caixa_receb(nr_seq_saldo, dt_str, cd_trans_fin)
+            # 1 recebimento aberto por caixa+dia; vários cartões no mesmo recebimento
+            ensure_receb = getattr(self.tasy, "ensure_caixa_receb_aberto", None)
+            if ensure_receb is not None:
+                nr_seq_receb = ensure_receb(nr_seq_saldo, dt_str, cd_trans_fin)
+            else:
+                nr_seq_receb = self.tasy.inserir_caixa_receb(
+                    nr_seq_saldo, dt_str, cd_trans_fin
+                )
             nr_seq_movto = self._inserir_movto(tx, nr_seq_receb, dt_saldo, sem_tesouraria=False)
 
-            # Ordem: documento → FECHAR. Doc sem nr_seq_caixa (FECHAR preenche).
-            # Se FECHAR falhar → status 9 (reprocessável).
-            self.tasy.inserir_documento(
-                {
-                    "nr_seq_caixa_rec": nr_seq_receb,
-                    "nr_seq_movto_cartao": nr_seq_movto,
-                    "dt_transacao": dt_saldo,
-                    "nr_seq_trans_financ": cd_trans_fin,
-                    "vl_transacao": to_float_money(tx.vl_transacao),
-                }
-            )
+            # 1 documento = soma dos cartões do recebimento (sem FECHAR automático)
+            upsert_doc = getattr(self.tasy, "upsert_documento_agregado", None)
+            if upsert_doc is not None:
+                vl_doc = upsert_doc(
+                    nr_seq_caixa_rec=nr_seq_receb,
+                    nr_seq_trans_financ=cd_trans_fin,
+                    dt_transacao=dt_saldo,
+                )
+            else:
+                self.tasy.inserir_documento(
+                    {
+                        "nr_seq_caixa_rec": nr_seq_receb,
+                        "nr_seq_movto_cartao": nr_seq_movto,
+                        "dt_transacao": dt_saldo,
+                        "nr_seq_trans_financ": cd_trans_fin,
+                        "vl_transacao": to_float_money(tx.vl_transacao),
+                    }
+                )
+                vl_doc = to_float_money(tx.vl_transacao)
 
-            return self._aplicar_fechar(
-                tx,
-                nr_seq_pg=nr_seq_pg,
-                nr_seq_receb=nr_seq_receb,
-                dt_str=dt_str,
-                nr_seq_movto=nr_seq_movto,
+            msg = (
+                f"Transação Integrada | caixa_receb={nr_seq_receb} | "
+                f"movto={nr_seq_movto} | doc_agregado_vl={vl_doc}"
+            )
+            self.staging.update_status(nr_seq_pg, StatusIntegracao.INTEGRADO.value, msg)
+            logger.info(
+                "Inserido | id_stone=%s | caixa=%s | caixa_receb=%s | movto=%s | doc_vl=%s",
+                tx.id_stone,
+                cd_caixa,
+                nr_seq_receb,
+                nr_seq_movto,
+                vl_doc,
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.INTEGRADO,
+                mensagem=msg,
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+                nr_seq_caixa_receb=nr_seq_receb,
             )
         except Exception as exc:
             retryable = is_retryable_error(exc)
@@ -284,8 +314,20 @@ class IntegrarTransacaoCartao:
         except Exception as exc:
             fechar_erro = str(exc)[:300]
             deleted: dict = {}
+            # Recebimento compartilhado: só purga se for o único cartão do recebimento
+            pode_purgar = True
+            count_fn = getattr(self.tasy, "count_movtos_caixa_receb", None)
+            if count_fn is not None:
+                try:
+                    pode_purgar = int(count_fn(nr_seq_receb) or 0) <= 1
+                except Exception:
+                    logger.exception(
+                        "Falha ao contar movtos do recebimento | caixa_receb=%s",
+                        nr_seq_receb,
+                    )
+                    pode_purgar = False
             purge_fn = getattr(self.tasy, "purge_stone_transaction", None)
-            if purge_fn is not None:
+            if pode_purgar and purge_fn is not None:
                 try:
                     from tasy_insercao.infrastructure.config.settings import settings
 
@@ -306,6 +348,13 @@ class IntegrarTransacaoCartao:
                         "Falha ao purgar Oracle após FECHAR | id_stone=%s",
                         tx.id_stone,
                     )
+            elif not pode_purgar:
+                logger.warning(
+                    "FECHAR falhou em recebimento compartilhado | id_stone=%s | "
+                    "caixa_receb=%s | purge omitido",
+                    tx.id_stone,
+                    nr_seq_receb,
+                )
             msg = (
                 f"REINTEGRAR | FECHAR falhou | Oracle removido={deleted} | {fechar_erro}"
             )[:500]
@@ -325,9 +374,9 @@ class IntegrarTransacaoCartao:
                 id_stone=tx.id_stone,
                 status=StatusIntegracao.CONFIRMACAO_PENDENTE,
                 mensagem=msg,
-                retryable=False,  # ack — não bloqueia fila; reintegrar no portal
+                retryable=False,
                 nr_sequencia_pg=nr_seq_pg,
-                nr_seq_caixa_receb=None,
+                nr_seq_caixa_receb=None if deleted else nr_seq_receb,
             )
 
     def _integrar_sem_tesouraria(self, tx: TransacaoCartao) -> ResultadoIntegracao:

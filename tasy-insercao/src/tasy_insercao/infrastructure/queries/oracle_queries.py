@@ -9,6 +9,49 @@ WHERE
     AND dt_saldo = TO_DATE(:dt_saldo, 'YYYY-MM-DD')
 """
 
+# Um recebimento Stone aberto por saldo diário (caixa + dia).
+SELECT_CAIXA_RECEB_ABERTO_STONE = """
+SELECT nr_sequencia FROM (
+    SELECT cr.nr_sequencia
+    FROM caixa_receb cr
+    WHERE cr.nr_seq_saldo_caixa = :nr_seq_saldo_caixa
+      AND cr.nm_usuario = 'stone'
+      AND cr.dt_fechamento IS NULL
+    ORDER BY cr.nr_sequencia
+) WHERE ROWNUM = 1
+"""
+
+SELECT_SOMA_MOVTO_POR_CAIXA_RECEB = """
+SELECT NVL(SUM(m.vl_transacao), 0)
+FROM movto_cartao_cr m
+WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  AND m.dt_cancelamento IS NULL
+"""
+
+SELECT_DOC_AGREGADO_POR_CAIXA_RECEB = """
+SELECT nr_sequencia FROM (
+    SELECT d.nr_sequencia
+    FROM movto_trans_financ d
+    WHERE d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+      AND d.nm_usuario = 'stone'
+      AND d.nr_seq_lote IS NULL
+    ORDER BY d.nr_sequencia
+) WHERE ROWNUM = 1
+"""
+
+SELECT_QTD_MOVTO_POR_CAIXA_RECEB = """
+SELECT COUNT(*)
+FROM movto_cartao_cr m
+WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  AND m.dt_cancelamento IS NULL
+"""
+
+SELECT_CAIXA_RECEB_TRANS_E_DATA = """
+SELECT nr_seq_trans_financ, dt_recebimento
+FROM caixa_receb
+WHERE nr_sequencia = :nr_seq_caixa_rec
+"""
+
 SELECT_MOVTO_POR_ID_STONE = """
 SELECT
     nr_sequencia
@@ -277,11 +320,57 @@ BEGIN
 END;
 """
 
-# Documento ligado ao recebimento/cartão.
-# NÃO preencher nr_seq_caixa / nr_seq_saldo_caixa / nr_seq_lote:
-# FECHAR_CAIXA_RECEB aborta se existir movto_trans_financ do caixa com
-# dt_fechamento_lote NULL ("Já existe um lote aberto"). O FECHAR preenche
-# caixa/saldo/lote no UPDATE onde nr_seq_caixa_rec = ... AND nr_seq_lote IS NULL.
+# Documento agregado do recebimento (1 doc = soma dos cartões).
+# Sem nr_seq_movto_cartao: representa o lote, não um cartão isolado.
+# Sem nr_seq_caixa / lote (FECHAR preenche na confirmação).
+INSERT_MOVTO_TRANS_FINANC_AGREGADO = """
+INSERT INTO movto_trans_financ(
+    nr_sequencia,
+    dt_transacao,
+    cd_moeda,
+    nr_seq_trans_financ,
+    cd_pessoa_fisica,
+    vl_transacao,
+    dt_atualizacao,
+    nm_usuario,
+    nr_lote_contabil,
+    ie_conciliacao,
+    nr_seq_caixa_rec,
+    nr_seq_movto_cartao,
+    ie_rejeitado,
+    ie_outros_rec,
+    cd_estabelecimento
+) VALUES (
+    movto_trans_financ_seq.NEXTVAL,
+    :dt_transacao,
+    1,
+    :nr_seq_trans_financ,
+    1075,
+    :vl_transacao,
+    SYSDATE,
+    'stone',
+    0,
+    'N',
+    :nr_seq_caixa_rec,
+    NULL,
+    'N',
+    'N',
+    1
+)
+"""
+
+UPDATE_DOC_AGREGADO_VALOR = """
+UPDATE movto_trans_financ d
+SET d.vl_transacao = :vl_transacao,
+    d.nr_seq_trans_financ = :nr_seq_trans_financ,
+    d.nr_seq_movto_cartao = NULL,
+    d.dt_atualizacao = SYSDATE
+WHERE d.nr_sequencia = :nr_seq_doc
+  AND d.nm_usuario = 'stone'
+"""
+
+# Documento legado (1:1 com cartão) — mantido para compat.
+# NÃO preencher nr_seq_caixa / nr_seq_saldo_caixa / nr_seq_lote.
 INSERT_MOVTO_TRANS_FINANC = """
 INSERT INTO movto_trans_financ(
     nr_sequencia,
