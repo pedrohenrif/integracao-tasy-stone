@@ -58,32 +58,37 @@ def test_documento_sempre_depois_movto_e_antes_do_fechar():
     assert "confirmado" in result.mensagem.lower()
 
 
-def test_fechar_lote_aberto_vira_status_9_reprocessavel():
+def test_fechar_falha_purge_oracle_e_status_9_reintegrar():
     staging, tasy = _setup_ok()
     tasy.fechar_caixa_receb.side_effect = Exception(
         "ORA-20011: Já existe um lote aberto para este caixa!"
     )
+    tasy.purge_stone_transaction.return_value = {
+        "ok": True,
+        "deleted": {"movto": 1, "docs": 1, "caixa_receb": 1, "parcelas": 0},
+    }
 
     result = IntegrarTransacaoCartao(staging, tasy).execute(_tx())
 
     assert result.status == StatusIntegracao.CONFIRMACAO_PENDENTE
     assert result.retryable is False
-    tasy.inserir_documento.assert_called_once()
+    assert result.nr_seq_caixa_receb is None
+    tasy.purge_stone_transaction.assert_called_once()
+    assert "REINTEGRAR" in result.mensagem
     staging.update_status.assert_called_with(
         99,
         StatusIntegracao.CONFIRMACAO_PENDENTE.value,
         result.mensagem,
     )
-    assert "CONFIRMACAO_PENDENTE" in result.mensagem
 
 
-def test_reprocesso_status_9_so_tenta_fechar():
+def test_reprocesso_status_9_com_movto_so_tenta_fechar():
     staging = MagicMock()
     tasy = MagicMock()
     staging.get_by_id_stone.return_value = (
         42,
         StatusIntegracao.CONFIRMACAO_PENDENTE.value,
-        "CONFIRMACAO_PENDENTE | ORA-20011",
+        "REINTEGRAR | antigo",
     )
     tasy.exists_movto_by_id_stone.return_value = True
     tasy.ensure_documento_por_id_stone.return_value = False
@@ -101,3 +106,22 @@ def test_reprocesso_status_9_so_tenta_fechar():
     tasy.inserir_movto_cartao.assert_not_called()
     tasy.inserir_documento.assert_not_called()
     tasy.fechar_caixa_receb.assert_called_once_with(88, "2026-07-08")
+
+
+def test_reprocesso_status_9_sem_movto_reintegra_do_zero():
+    staging, tasy = _setup_ok()
+    staging.get_by_id_stone.return_value = (
+        99,
+        StatusIntegracao.CONFIRMACAO_PENDENTE.value,
+        "REINTEGRAR | Oracle removido",
+    )
+    tasy.exists_movto_by_id_stone.return_value = False
+    tasy.fechar_caixa_receb.return_value = 0.0
+
+    result = IntegrarTransacaoCartao(staging, tasy).execute(_tx())
+
+    assert result.status == StatusIntegracao.INTEGRADO
+    tasy.inserir_caixa_receb.assert_called_once()
+    tasy.inserir_movto_cartao.assert_called_once()
+    tasy.inserir_documento.assert_called_once()
+    tasy.fechar_caixa_receb.assert_called_once()

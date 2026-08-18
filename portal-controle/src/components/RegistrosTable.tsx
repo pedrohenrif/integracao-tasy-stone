@@ -7,7 +7,7 @@ const STATUS: Record<number, string> = {
   6: "Retry",
   7: "DLQ",
   8: "Sem Tesouraria",
-  9: "Confirmação pendente",
+  9: "Reintegrar",
 };
 
 function money(v: number) {

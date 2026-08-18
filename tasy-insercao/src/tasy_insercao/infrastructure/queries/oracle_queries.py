@@ -102,14 +102,21 @@ INSERT INTO caixa_receb(
 # Chamar DEPOIS do insert de movto_trans_financ (documento) — a procedure
 # confirma o recebimento; o documento da tela é o nosso INSERT.
 # Se houver troco (vl_troco < 0), chama de novo com ie_troco = 'S' (padrão INTPD).
+#
+# CTB_ONLINE exige sessão Tasy (obter_perfil_ativo / estabelecimento).
+# Sem set_cd_perfil a CTB aborta com #@DS_ERRO_W#@ (perfil 0).
 CALL_FECHAR_CAIXA_RECEB = """
 DECLARE
   v_troco NUMBER := 0;
 BEGIN
+  wheb_usuario_pck.set_nm_usuario(:nm_usuario);
+  wheb_usuario_pck.set_cd_estabelecimento(:cd_estabelecimento);
+  wheb_usuario_pck.set_cd_perfil(:cd_perfil);
+
   Fechar_caixa_receb(
     :nr_seq_caixa_rec,
     'N',
-    'stone',
+    :nm_usuario,
     v_troco,
     TO_DATE(:dt_fechamento, 'YYYY-MM-DD'),
     'S'
@@ -118,7 +125,7 @@ BEGIN
     Fechar_caixa_receb(
       :nr_seq_caixa_rec,
       'S',
-      'stone',
+      :nm_usuario,
       v_troco,
       TO_DATE(:dt_fechamento, 'YYYY-MM-DD'),
       'S'

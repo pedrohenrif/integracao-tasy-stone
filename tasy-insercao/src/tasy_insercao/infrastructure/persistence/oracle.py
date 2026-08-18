@@ -227,6 +227,9 @@ class TasyOracleRepository:
             {
                 "nr_seq_caixa_rec": nr_seq_caixa_rec,
                 "dt_fechamento": dt_fechamento,
+                "nm_usuario": settings.TASY_NM_USUARIO,
+                "cd_estabelecimento": settings.TASY_CD_ESTABELECIMENTO,
+                "cd_perfil": settings.TASY_CD_PERFIL,
             },
             out_name="vl_troco",
         )

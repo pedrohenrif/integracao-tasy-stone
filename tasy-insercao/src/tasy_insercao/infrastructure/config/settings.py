@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     ORACLE_USER: str = ""
     ORACLE_PASS: str = ""
     ORACLE_DSN: str = ""
+    # Sessão Tasy antes do FECHAR_CAIXA_RECEB (CTB online exige perfil ativo)
+    # ADM DO SISTEMA = 1848; stone também tem FINANCEIRO - ANALISTA = 2351
+    TASY_NM_USUARIO: str = "stone"
+    TASY_CD_ESTABELECIMENTO: int = 1
+    TASY_CD_PERFIL: int = 1848
 
     # Portal de controle (React + JWT)
     PORTAL_JWT_SECRET: str = "altere-este-secret-em-producao"

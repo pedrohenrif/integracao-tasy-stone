@@ -96,7 +96,7 @@ export function DashboardPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
-          <span>Confirmação pendente</span>
+          <span>Reintegrar (9)</span>
           <b>{totais.confirmacao_pendente ?? 0}</b>
         </div>
         <div className="card">

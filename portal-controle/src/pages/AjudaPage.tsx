@@ -33,7 +33,7 @@ const BLOCKS: HelpBlock[] = [
       "Lista os registros gravados no Postgres (staging).",
       "Ao abrir, carrega só o dia de ontem (paginado). Amplie as datas nos filtros para ver mais.",
       "Use os filtros: data, caixa, status, tipo (crédito/débito/PIX), bandeira, ID Stone, etc.",
-      "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria, Confirmação pendente (9 — reprocessar FECHAR).",
+      "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria, Reintegrar (9 — Oracle limpo após falha no FECHAR; reprocessar do zero).",
       "Serve para conferir se um movimento do dia entrou e com qual valor/caixa.",
     ],
   },

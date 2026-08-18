@@ -81,7 +81,7 @@ class StatusIntegracao(int, Enum):
     ERRO_DEFINITIVO = 7
     # Movto cartão no Tasy sem caixa_saldo_diario / caixa_receb (serial sem cadastro)
     SEM_TESOURARIA = 8
-    # Movto + documento OK; FECHAR_CAIXA_RECEB falhou (ex.: lote aberto) — reprocessável
+    # FECHAR falhou: Oracle é removido; painel status 9 = reintegrar do zero
     CONFIRMACAO_PENDENTE = 9
 
 

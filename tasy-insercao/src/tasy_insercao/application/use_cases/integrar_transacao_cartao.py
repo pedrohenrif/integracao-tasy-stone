@@ -81,9 +81,14 @@ class IntegrarTransacaoCartao:
                 nr_sequencia_pg=existente[0],
             )
 
-        # Reprocesso de confirmação (status 9) ou movto já no Oracle
+        # Status 9: se ainda há movto no Oracle → só FECHAR; se já foi limpo → reintegra do zero
         if existente and existente[1] == StatusIntegracao.CONFIRMACAO_PENDENTE.value:
-            return self._confirmar_recebimento_existente(tx, nr_seq_pg=existente[0])
+            if self.tasy.exists_movto_by_id_stone(tx.id_stone):
+                return self._confirmar_recebimento_existente(tx, nr_seq_pg=existente[0])
+            logger.info(
+                "Status 9 sem movto Oracle | reintegrando do zero | id_stone=%s",
+                tx.id_stone,
+            )
 
         if self.tasy.exists_movto_by_id_stone(tx.id_stone):
             # Movto já no Oracle: se foi caminho sem caixa, mantém status 8
@@ -278,11 +283,37 @@ class IntegrarTransacaoCartao:
             )
         except Exception as exc:
             fechar_erro = str(exc)[:300]
-            msg = f"CONFIRMACAO_PENDENTE | {fechar_erro}"
+            deleted: dict = {}
+            purge_fn = getattr(self.tasy, "purge_stone_transaction", None)
+            if purge_fn is not None:
+                try:
+                    from tasy_insercao.infrastructure.config.settings import settings
+
+                    purge_result = purge_fn(
+                        tx.id_stone,
+                        settings.TASY_NM_USUARIO,
+                        allow_fechado=True,
+                    )
+                    deleted = purge_result.get("deleted") or {}
+                    if not purge_result.get("ok"):
+                        logger.warning(
+                            "Purge pós-FECHAR incompleto | id_stone=%s | %s",
+                            tx.id_stone,
+                            purge_result.get("blocked_reason"),
+                        )
+                except Exception:
+                    logger.exception(
+                        "Falha ao purgar Oracle após FECHAR | id_stone=%s",
+                        tx.id_stone,
+                    )
+            msg = (
+                f"REINTEGRAR | FECHAR falhou | Oracle removido={deleted} | {fechar_erro}"
+            )[:500]
             logger.warning(
-                "Fechar_caixa_receb falhou | id_stone=%s | caixa_receb=%s | %s",
+                "Fechar_caixa_receb falhou | id_stone=%s | caixa_receb=%s | purge=%s | %s",
                 tx.id_stone,
                 nr_seq_receb,
+                deleted,
                 fechar_erro,
             )
             self.staging.update_status(
@@ -294,9 +325,9 @@ class IntegrarTransacaoCartao:
                 id_stone=tx.id_stone,
                 status=StatusIntegracao.CONFIRMACAO_PENDENTE,
                 mensagem=msg,
-                retryable=False,  # não vai para retry/DLQ — reprocessar no portal
+                retryable=False,  # ack — não bloqueia fila; reintegrar no portal
                 nr_sequencia_pg=nr_seq_pg,
-                nr_seq_caixa_receb=nr_seq_receb,
+                nr_seq_caixa_receb=None,
             )
 
     def _integrar_sem_tesouraria(self, tx: TransacaoCartao) -> ResultadoIntegracao:

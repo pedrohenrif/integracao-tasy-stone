@@ -37,7 +37,7 @@ export function ErrosPage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const data = await registrosApi({ ...filtros, cd_status: filtros.cd_status || "7" });
+      const data = await registrosApi({ ...filtros });
       setRows(data.registros || []);
       setSelected(new Set());
     } catch (e) {
@@ -172,7 +172,8 @@ export function ErrosPage() {
       <header className="page-head">
         <h1>Erros / DLQ</h1>
         <p className="muted">
-          Status 7 (definitivo) ou 6 (retry). Reprocesse com edição de serial/caixa ou em lote.
+          Erros, Sem Tesouraria e Reintegrar (9). Status &quot;Todos&quot; lista qualquer status (respeitando as
+          datas). Reprocesse com edição de serial/caixa ou em lote.
         </p>
       </header>
 
