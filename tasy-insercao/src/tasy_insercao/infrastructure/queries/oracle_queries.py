@@ -270,7 +270,11 @@ BEGIN
 END;
 """
 
-# Documento: mesma transação do caixa_receb; valor = total da transação (parcelado incluso)
+# Documento ligado ao recebimento/cartão.
+# NÃO preencher nr_seq_caixa / nr_seq_saldo_caixa / nr_seq_lote:
+# FECHAR_CAIXA_RECEB aborta se existir movto_trans_financ do caixa com
+# dt_fechamento_lote NULL ("Já existe um lote aberto"). O FECHAR preenche
+# caixa/saldo/lote no UPDATE onde nr_seq_caixa_rec = ... AND nr_seq_lote IS NULL.
 INSERT_MOVTO_TRANS_FINANC = """
 INSERT INTO movto_trans_financ(
     nr_sequencia,
@@ -285,8 +289,6 @@ INSERT INTO movto_trans_financ(
     ie_conciliacao,
     nr_seq_caixa_rec,
     nr_seq_movto_cartao,
-    nr_seq_saldo_caixa,
-    nr_seq_caixa,
     ie_rejeitado,
     ie_outros_rec,
     cd_estabelecimento
@@ -303,12 +305,21 @@ INSERT INTO movto_trans_financ(
     'N',
     :nr_seq_caixa_rec,
     :nr_seq_movto_cartao,
-    :nr_seq_saldo_caixa,
-    :nr_seq_caixa,
     'N',
     'N',
     1
 )
+"""
+
+# Docs já gravados com nr_seq_caixa (bloqueiam FECHAR): libera antes de confirmar.
+LIBERAR_DOC_LOTE_ANTES_FECHAR = """
+UPDATE movto_trans_financ d
+SET d.nr_seq_caixa = NULL,
+    d.nr_seq_lote = NULL,
+    d.dt_atualizacao = SYSDATE
+WHERE d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  AND d.nm_usuario = 'stone'
+  AND d.dt_fechamento_lote IS NULL
 """
 
 # Alinha docs Stone: transação = caixa_receb; valor = total do movto_cartao
@@ -338,7 +349,8 @@ WHERE d.nm_usuario = 'stone'
   )
 """
 
-# Corrige docs Stone já gravados sem vínculo com o cartão
+# Corrige docs Stone já gravados sem vínculo com o cartão.
+# Não preenche nr_seq_caixa (FECHAR preenche; senão vira "lote aberto").
 UPDATE_DOC_STONE_VINCULO_CARTAO = """
 UPDATE movto_trans_financ d
 SET
@@ -346,17 +358,6 @@ SET
         SELECT MAX(m.nr_sequencia)
         FROM movto_cartao_cr m
         WHERE m.nr_seq_caixa_rec = d.nr_seq_caixa_rec
-    ),
-    d.nr_seq_saldo_caixa = (
-        SELECT cr.nr_seq_saldo_caixa
-        FROM caixa_receb cr
-        WHERE cr.nr_sequencia = d.nr_seq_caixa_rec
-    ),
-    d.nr_seq_caixa = (
-        SELECT csd.nr_seq_caixa
-        FROM caixa_receb cr
-        JOIN caixa_saldo_diario csd ON csd.nr_sequencia = cr.nr_seq_saldo_caixa
-        WHERE cr.nr_sequencia = d.nr_seq_caixa_rec
     ),
     d.dt_atualizacao = SYSDATE,
     d.nm_usuario = 'stone'

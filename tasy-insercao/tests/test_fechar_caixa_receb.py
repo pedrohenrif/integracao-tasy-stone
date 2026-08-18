@@ -49,6 +49,10 @@ def test_documento_sempre_depois_movto_e_antes_do_fechar():
 
     assert result.status == StatusIntegracao.INTEGRADO
     tasy.inserir_documento.assert_called_once()
+    doc_params = tasy.inserir_documento.call_args[0][0]
+    assert "nr_seq_caixa" not in doc_params
+    assert "nr_seq_saldo_caixa" not in doc_params
+    assert doc_params["nr_seq_caixa_rec"] == 88
     tasy.fechar_caixa_receb.assert_called_once_with(88, "2026-07-08")
     assert order == ["doc", "fechar"]
     assert "confirmado" in result.mensagem.lower()

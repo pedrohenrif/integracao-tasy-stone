@@ -136,16 +136,14 @@ class TasyOracleRepository:
             nr_seq_caixa_rec,
             vl_transacao,
             dt_transacao,
-            nr_seq_saldo_caixa,
+            _nr_seq_saldo_caixa,
             nr_seq_trans_financ,
-            nr_seq_caixa,
+            _nr_seq_caixa,
         ) = row
         self.inserir_documento(
             {
                 "nr_seq_caixa_rec": int(nr_seq_caixa_rec),
                 "nr_seq_movto_cartao": int(nr_seq_movto),
-                "nr_seq_saldo_caixa": int(nr_seq_saldo_caixa),
-                "nr_seq_caixa": int(nr_seq_caixa),
                 "dt_transacao": dt_transacao,
                 "nr_seq_trans_financ": int(nr_seq_trans_financ),
                 "vl_transacao": float(vl_transacao),
@@ -194,6 +192,16 @@ class TasyOracleRepository:
     def inserir_documento(self, params: dict) -> None:
         self.db.execute(ora.INSERT_MOVTO_TRANS_FINANC, params)
 
+    def liberar_doc_lote_antes_fechar(self, nr_seq_caixa_rec: int) -> int:
+        """
+        Zera nr_seq_caixa/nr_seq_lote em docs Stone do recebimento ainda sem
+        dt_fechamento_lote. Evita ORA-20011 'lote aberto' (docs legados).
+        """
+        return self.db.execute_dml(
+            ora.LIBERAR_DOC_LOTE_ANTES_FECHAR,
+            {"nr_seq_caixa_rec": nr_seq_caixa_rec},
+        )
+
     def fechar_caixa_receb(self, nr_seq_caixa_rec: int, dt_fechamento: str) -> float:
         """
         Confirma o recebimento no Tasy (botão Tesouraria / Ctrl+F6).
@@ -201,6 +209,14 @@ class TasyOracleRepository:
         Não usar no fluxo Sem Tesouraria (sem caixa_receb).
         Retorna vl_troco calculado pela procedure.
         """
+        liberados = self.liberar_doc_lote_antes_fechar(nr_seq_caixa_rec)
+        if liberados:
+            logger.info(
+                "Fechar_caixa_receb | docs liberados (nr_seq_caixa null) | "
+                "nr_seq_caixa_rec=%s | qtd=%s",
+                nr_seq_caixa_rec,
+                liberados,
+            )
         logger.info(
             "Fechar_caixa_receb | início | nr_seq_caixa_rec=%s | dt=%s",
             nr_seq_caixa_rec,

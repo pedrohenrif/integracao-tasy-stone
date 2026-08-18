@@ -139,13 +139,12 @@ class IntegrarTransacaoCartao:
             nr_seq_receb = self.tasy.inserir_caixa_receb(nr_seq_saldo, dt_str, cd_trans_fin)
             nr_seq_movto = self._inserir_movto(tx, nr_seq_receb, dt_saldo, sem_tesouraria=False)
 
-            # Ordem: documento → FECHAR. Se FECHAR falhar → status 9 (reprocessável).
+            # Ordem: documento → FECHAR. Doc sem nr_seq_caixa (FECHAR preenche).
+            # Se FECHAR falhar → status 9 (reprocessável).
             self.tasy.inserir_documento(
                 {
                     "nr_seq_caixa_rec": nr_seq_receb,
                     "nr_seq_movto_cartao": nr_seq_movto,
-                    "nr_seq_saldo_caixa": nr_seq_saldo,
-                    "nr_seq_caixa": cd_caixa,
                     "dt_transacao": dt_saldo,
                     "nr_seq_trans_financ": cd_trans_fin,
                     "vl_transacao": to_float_money(tx.vl_transacao),
