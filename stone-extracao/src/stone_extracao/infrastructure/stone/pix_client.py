@@ -72,9 +72,11 @@ class StonePixClient:
             f"/merchant/{merchant}"
             f"/conciliation-file/pix/{reference_date}"
         )
+        # Cliente Stone: Basic + x-user-type. Body {} porque Content-Type json é obrigatório.
+        # follow_redirects=False: em redirect cross-host o httpx remove Authorization e a
+        # Stone responde 400 ClientIdentifier/ClientId or AccountId.
         headers = {
             **build_client_auth_headers(),
-            "Content-Type": "application/json",
             "Accept": "application/json",
         }
         logger.info(
@@ -84,8 +86,14 @@ class StonePixClient:
             url,
         )
 
-        async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
-            response = await client.post(url, headers=headers)
+        async with httpx.AsyncClient(timeout=90.0, follow_redirects=False) as client:
+            response = await client.post(url, headers=headers, json={})
+            if response.is_redirect:
+                loc = response.headers.get("location") or ""
+                raise PixFetchError(
+                    f"Stone PIX API {response.status_code} redirect inesperado "
+                    f"(location={loc[:120]}). Não seguimos redirect para preservar auth."
+                )
             if response.status_code not in (200, 202, 204):
                 body = (response.text or "")[:500]
                 logger.error(
@@ -97,8 +105,9 @@ class StonePixClient:
                 hint = ""
                 if "ClientIdentifier" in body or "ClientId" in body or "AccountId" in body:
                     hint = (
-                        " | Dica: confira STONE_PIX_MERCHANT_ID (CNPJ 14 dígitos do merchant PIX) "
-                        "e se STONE_API_TOKEN é a chave de Cliente Stone (x-user-type: client)."
+                        " | Dica: (1) confira STONE_PIX_MERCHANT_ID=CNPJ da conta da chave; "
+                        "(2) cadastre webhook HTTPS antes (POST /pix/webhook/register); "
+                        "(3) chave deve ser Cliente Stone (sk_) com x-user-type: client."
                     )
                 raise PixFetchError(
                     f"Stone PIX API {response.status_code}: {body[:350]}{hint}"
@@ -163,13 +172,12 @@ class StonePixClient:
         endpoint = f"{settings.STONE_CONCILIATION_BASE_URL.rstrip('/')}/webhook"
         headers = {
             **build_client_auth_headers(),
-            "Content-Type": "application/json",
             "Accept": "application/json",
         }
         payload = {"url": url}
         logger.info("PIX webhook %s | url=%s | target=%s", method, endpoint, url)
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             response = await client.request(method, endpoint, headers=headers, json=payload)
             if response.status_code not in ok_statuses:
                 raise PixFetchError(
