@@ -170,3 +170,68 @@ def test_reprocesso_status_9_sem_movto_reintegra_do_zero():
     tasy.inserir_movto_cartao.assert_called_once()
     tasy.upsert_documento_agregado.assert_called_once()
     tasy.fechar_caixa_receb.assert_not_called()
+
+
+def test_fechar_recebimentos_abertos_um_por_caixa_receb():
+    from tasy_insercao.application.use_cases.fechar_recebimentos_abertos import (
+        fechar_recebimentos_abertos_stone,
+    )
+
+    tasy = MagicMock()
+    tasy.listar_caixa_receb_abertos_stone.return_value = [
+        {
+            "nr_seq_caixa_rec": 88,
+            "dt_recebimento": "2026-07-08",
+            "nr_seq_caixa": 10,
+            "nr_seq_trans_financ": 123,
+        },
+        {
+            "nr_seq_caixa_rec": 99,
+            "dt_recebimento": "2026-07-08",
+            "nr_seq_caixa": 20,
+            "nr_seq_trans_financ": 456,
+        },
+    ]
+    tasy.fechar_caixa_receb.side_effect = [0.0, 1.5]
+    tasy.upsert_documento_agregado.return_value = 100.0
+
+    out = fechar_recebimentos_abertos_stone(tasy, dt="2026-07-08")
+
+    assert out["ok"] is True
+    assert out["encontrados"] == 2
+    assert out["fechados"] == 2
+    assert out["falhas"] == 0
+    assert tasy.fechar_caixa_receb.call_count == 2
+    tasy.fechar_caixa_receb.assert_any_call(88, "2026-07-08")
+    tasy.fechar_caixa_receb.assert_any_call(99, "2026-07-08")
+    assert tasy.upsert_documento_agregado.call_count == 2
+
+
+def test_fechar_recebimentos_abertos_parcial_falha():
+    from tasy_insercao.application.use_cases.fechar_recebimentos_abertos import (
+        fechar_recebimentos_abertos_stone,
+    )
+
+    tasy = MagicMock()
+    tasy.listar_caixa_receb_abertos_stone.return_value = [
+        {
+            "nr_seq_caixa_rec": 88,
+            "dt_recebimento": "2026-07-08",
+            "nr_seq_caixa": 10,
+            "nr_seq_trans_financ": 123,
+        },
+        {
+            "nr_seq_caixa_rec": 99,
+            "dt_recebimento": "2026-07-08",
+            "nr_seq_caixa": 20,
+            "nr_seq_trans_financ": 456,
+        },
+    ]
+    tasy.fechar_caixa_receb.side_effect = [0.0, Exception("ORA-20011")]
+
+    out = fechar_recebimentos_abertos_stone(tasy, dt="2026-07-08")
+
+    assert out["ok"] is False
+    assert out["fechados"] == 1
+    assert out["falhas"] == 1
+    assert out["itens"][1]["ok"] is False

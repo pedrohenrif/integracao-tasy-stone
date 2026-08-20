@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 from stone_extracao.application.services.data_referencia import data_ontem
 from stone_extracao.infrastructure.config.logging import get_logger
 from stone_extracao.infrastructure.config.settings import settings
 from stone_extracao.infrastructure.messaging.portal_audit import notificar_auditoria_portal
+from stone_extracao.infrastructure.messaging.portal_fechar_receb import (
+    notificar_fechar_recebimentos,
+)
 from stone_extracao.infrastructure.store.cron_cartao_state import (
     carregar_cron_enabled,
     carregar_estado,
@@ -22,6 +28,7 @@ logger = get_logger(__name__)
 JOB_ID = "cartao_conciliacao_d1"
 JOB_ID_RETRY = "cartao_conciliacao_d1_retry"
 JOB_IDS = (JOB_ID, JOB_ID_RETRY)
+JOB_ID_FECHAR_PREFIX = "fechar_receb_d1_"
 # Se o processo estiver ocupado/reiniciando no minuto exato, ainda executa (padrão APScheduler = 1s).
 MISFIRE_GRACE_SECONDS = 2 * 60 * 60
 
@@ -31,17 +38,18 @@ ExtracaoRunner = Callable[[str], Awaitable[object]]
 
 def _on_scheduler_event(event) -> None:
     job_id = getattr(event, "job_id", "?")
-    if job_id not in JOB_IDS:
+    if job_id not in JOB_IDS and not str(job_id).startswith(JOB_ID_FECHAR_PREFIX):
         return
     if event.code == EVENT_JOB_MISSED:
         msg = f"job perdida (misfire) scheduled={getattr(event, 'scheduled_run_time', None)}"
         logger.error("Cron | %s | job=%s", msg, job_id)
-        registrar_resultado_cron(
-            ok=False,
-            reference_date=data_ontem(settings.CARTAO_CRON_TZ),
-            slot=str(job_id),
-            error=msg,
-        )
+        if job_id in JOB_IDS:
+            registrar_resultado_cron(
+                ok=False,
+                reference_date=data_ontem(settings.CARTAO_CRON_TZ),
+                slot=str(job_id),
+                error=msg,
+            )
     elif event.code == EVENT_JOB_ERROR:
         logger.error("Cron | job erro | job=%s | %s", job_id, getattr(event, "exception", None))
     elif event.code == EVENT_JOB_EXECUTED:
@@ -53,6 +61,61 @@ def _slots_cartao() -> list[tuple[str, int, int]]:
         (JOB_ID, settings.CARTAO_CRON_HOUR, settings.CARTAO_CRON_MINUTE),
         (JOB_ID_RETRY, settings.CARTAO_CRON_RETRY_HOUR, settings.CARTAO_CRON_RETRY_MINUTE),
     ]
+
+
+def _agendar_fechar_recebimentos(
+    scheduler: AsyncIOScheduler,
+    *,
+    reference_date: str,
+    slot: str,
+) -> None:
+    """Após extrair/publicar com sucesso, agenda 1 FECHAR diferido (fila deve drenar)."""
+    if not settings.FECHAR_RECEB_ENABLED:
+        return
+    delay = max(0, int(settings.FECHAR_RECEB_DELAY_MINUTES or 0))
+    tz = ZoneInfo(settings.CARTAO_CRON_TZ)
+    run_at = datetime.now(tz) + timedelta(minutes=delay)
+    job_id = f"{JOB_ID_FECHAR_PREFIX}{reference_date}"
+
+    async def _fechar_job() -> None:
+        resultado = await notificar_fechar_recebimentos(
+            reference_date=reference_date,
+            slot=slot,
+        )
+        if resultado is None:
+            return
+        await notificar_auditoria_portal(
+            acao="fechar_receb_ok" if resultado.get("ok") else "fechar_receb_erro",
+            obs=(
+                f"date={reference_date} | slot={slot} | delay_min={delay} | "
+                f"fechados={resultado.get('fechados')} | "
+                f"falhas={resultado.get('falhas')}"
+            )[:500],
+            depois={
+                "flow": "fechar_receb",
+                "reference_date": reference_date,
+                "slot": slot,
+                "delay_minutes": delay,
+                "resultado": resultado,
+            },
+        )
+
+    scheduler.add_job(
+        _fechar_job,
+        trigger=DateTrigger(run_date=run_at, timezone=tz),
+        id=job_id,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=MISFIRE_GRACE_SECONDS,
+    )
+    logger.info(
+        "Fechar recebimentos agendado | date=%s | delay_min=%s | run_at=%s | job=%s",
+        reference_date,
+        delay,
+        run_at.isoformat(),
+        job_id,
+    )
 
 
 def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
@@ -106,6 +169,11 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
                     "slot": slot,
                     "published": published,
                 },
+            )
+            _agendar_fechar_recebimentos(
+                scheduler,
+                reference_date=reference_date,
+                slot=slot,
             )
         except Exception as exc:
             logger.exception(
@@ -218,6 +286,8 @@ def status_cron(scheduler: AsyncIOScheduler | None) -> dict[str, Any]:
         "next_date_preview": data_ontem(settings.CARTAO_CRON_TZ),
         "schedule": schedule,
         "slots": slots,
+        "fechar_receb_enabled": settings.FECHAR_RECEB_ENABLED,
+        "fechar_receb_delay_minutes": settings.FECHAR_RECEB_DELAY_MINUTES,
         "last_run_at": estado.get("last_run_at"),
         "last_ok": estado.get("last_ok"),
         "last_ok_at": estado.get("last_ok_at"),

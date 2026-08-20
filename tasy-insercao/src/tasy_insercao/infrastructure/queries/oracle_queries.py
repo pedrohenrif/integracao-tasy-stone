@@ -21,6 +21,23 @@ SELECT nr_sequencia FROM (
 ) WHERE ROWNUM = 1
 """
 
+# Recebimentos Stone abertos de um dia (confirmação diferida pós-lote).
+# :nr_seq_caixa opcional — None fecha todos os caixas do dia.
+SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_DATA = """
+SELECT
+    cr.nr_sequencia,
+    TO_CHAR(cr.dt_recebimento, 'YYYY-MM-DD') AS dt_recebimento,
+    csd.nr_seq_caixa,
+    cr.nr_seq_trans_financ
+FROM caixa_receb cr
+JOIN caixa_saldo_diario csd ON csd.nr_sequencia = cr.nr_seq_saldo_caixa
+WHERE cr.nm_usuario = 'stone'
+  AND cr.dt_fechamento IS NULL
+  AND TRUNC(cr.dt_recebimento) = TO_DATE(:dt_recebimento, 'YYYY-MM-DD')
+  AND (:nr_seq_caixa IS NULL OR csd.nr_seq_caixa = :nr_seq_caixa)
+ORDER BY csd.nr_seq_caixa, cr.nr_sequencia
+"""
+
 SELECT_SOMA_MOVTO_POR_CAIXA_RECEB = """
 SELECT NVL(SUM(m.vl_transacao), 0)
 FROM movto_cartao_cr m

@@ -79,6 +79,7 @@ def registrar_api_acesso(
     skip_prefixes = (
         "/api/auth/login",
         "/api/audit/sistema",
+        "/interno/",
         "/health",
     )
     if path.startswith(skip_prefixes) or path == "/api/auth/login":

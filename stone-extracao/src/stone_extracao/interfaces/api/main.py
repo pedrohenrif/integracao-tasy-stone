@@ -121,6 +121,21 @@ async def lifespan(app: FastAPI):
     aplicar_estado_inicial(scheduler)
     aplicar_estado_inicial_pix(scheduler)
 
+    if settings.CARTAO_CRON_HOUR < 4:
+        logger.warning(
+            "CARTAO_CRON_HOUR=%s:%02d está antes das 04:00 BRT — a Stone rejeita "
+            "conciliação de cartão nesse horário (HTTP 400). Ajuste o .env para >= 4.",
+            settings.CARTAO_CRON_HOUR,
+            settings.CARTAO_CRON_MINUTE,
+        )
+    if settings.PIX_CRON_HOUR < 3:
+        logger.warning(
+            "PIX_CRON_HOUR=%s:%02d está antes das 03:00 BRT — PIX Stone recomenda "
+            "solicitar só após esse horário. Preferível >= 04:00 alinhado ao cartão.",
+            settings.PIX_CRON_HOUR,
+            settings.PIX_CRON_MINUTE,
+        )
+
     yield
 
     scheduler.shutdown(wait=False)

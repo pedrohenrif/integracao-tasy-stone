@@ -17,6 +17,7 @@ from tasy_insercao.interfaces.api.routers import auth as auth_router
 from tasy_insercao.interfaces.api.routers import cadastros as cadastros_router
 from tasy_insercao.interfaces.api.routers import filas as filas_router
 from tasy_insercao.interfaces.api.routers import integracoes as integracoes_router
+from tasy_insercao.interfaces.api.routers import interno_tesouraria as interno_tesouraria_router
 from tasy_insercao.interfaces.api.routers import purge as purge_router
 from tasy_insercao.interfaces.api.routers import reprocessar as reprocessar_router
 from tasy_insercao.interfaces.api.routers import scheduler as scheduler_router
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(purge_router.router)
     app.include_router(audit_router.router)
     app.include_router(scheduler_router.router)
+    app.include_router(interno_tesouraria_router.router)
     return app
 
 

@@ -53,7 +53,20 @@ class StonePixClient:
         if not settings.STONE_API_TOKEN:
             raise PixFetchError("STONE_API_TOKEN não configurado")
 
-        merchant = settings.STONE_PIX_MERCHANT_ID
+        merchant = "".join(ch for ch in (settings.STONE_PIX_MERCHANT_ID or "") if ch.isdigit())
+        if not merchant:
+            raise PixFetchError(
+                "STONE_PIX_MERCHANT_ID vazio ou inválido. "
+                "Use o CNPJ do merchant PIX (14 dígitos), não o StoneCode do cartão. "
+                "Sem isso a Stone responde 400 ClientIdentifier/ClientId or AccountId."
+            )
+        if len(merchant) != 14:
+            logger.warning(
+                "PIX request | STONE_PIX_MERCHANT_ID=%s tem %s dígitos "
+                "(esperado CNPJ 14). StoneCode do cartão costuma falhar com ClientIdentifier.",
+                merchant,
+                len(merchant),
+            )
         url = (
             f"{settings.STONE_CONCILIATION_BASE_URL.rstrip('/')}"
             f"/merchant/{merchant}"
@@ -74,14 +87,21 @@ class StonePixClient:
         async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
             response = await client.post(url, headers=headers)
             if response.status_code not in (200, 202, 204):
+                body = (response.text or "")[:500]
                 logger.error(
                     "PIX request | falha Stone | date=%s | http=%s | body=%s",
                     reference_date,
                     response.status_code,
-                    (response.text or "")[:500],
+                    body,
                 )
+                hint = ""
+                if "ClientIdentifier" in body or "ClientId" in body or "AccountId" in body:
+                    hint = (
+                        " | Dica: confira STONE_PIX_MERCHANT_ID (CNPJ 14 dígitos do merchant PIX) "
+                        "e se STONE_API_TOKEN é a chave de Cliente Stone (x-user-type: client)."
+                    )
                 raise PixFetchError(
-                    f"Stone PIX API {response.status_code}: {response.text[:400]}"
+                    f"Stone PIX API {response.status_code}: {body[:350]}{hint}"
                 )
 
             raw = decode_stone_body(response.content, response.headers) if response.content else b""

@@ -170,7 +170,7 @@ export function SchedulerPage() {
 
       <CronCard
         title="Cartão — conciliação diária (D-1)"
-        hint="Quando ativo, busca o extrato de ontem (D-1) na Stone e publica na fila. Horários no .env: principal (CARTAO_CRON_*) e retry (CARTAO_CRON_RETRY_*), padrão 01:00 e 04:00."
+        hint="Quando ativo, busca o extrato de ontem (D-1) na Stone e publica na fila. Horários no .env: CARTAO_CRON_* e CARTAO_CRON_RETRY_* (padrão 04:00 e 05:00). A Stone só libera cartão após 04:00 BRT."
         status={cartao}
         busy={busy}
         onToggle={(v) => void toggleCartao(v)}
@@ -178,7 +178,7 @@ export function SchedulerPage() {
 
       <CronCard
         title="PIX — solicitação diária (D-1)"
-        hint="Quando ativo, solicita o extrato PIX de ontem; a Stone envia o CSV no webhook. Horários: PIX_CRON_* e PIX_CRON_RETRY_* (padrão 01:05 e 04:05)."
+        hint="Quando ativo, solicita o extrato PIX de ontem; a Stone envia o CSV no webhook. Horários: PIX_CRON_* e PIX_CRON_RETRY_* (padrão 04:05 e 05:05). Exige STONE_PIX_MERCHANT_ID = CNPJ (14 dígitos)."
         status={pix}
         busy={busy}
         onToggle={(v) => void togglePix(v)}

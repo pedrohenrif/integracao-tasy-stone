@@ -25,7 +25,8 @@ logger = get_logger(__name__)
 class IntegrarTransacaoCartao:
     """
     Use case: Caixa → Dia → Recebimento (1 por caixa/dia) → Cartão (N) →
-    Documento agregado (soma) → (FECHAR só sob demanda / status 9).
+    Documento agregado (soma). FECHAR não roda por cartão: confirmação diferida
+    (POST /interno/tesouraria/fechar-recebimentos-abertos) ou reprocesso status 9.
     Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """

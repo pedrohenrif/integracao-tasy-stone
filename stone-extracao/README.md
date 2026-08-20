@@ -100,9 +100,15 @@ No `.env`:
 
 ```env
 CARTAO_CRON_ENABLED=true
-CARTAO_CRON_HOUR=1          # 0-23 (ex.: 1 = 01:00)
-CARTAO_CRON_MINUTE=0        # 0-59
+CARTAO_CRON_HOUR=4          # 0-23 — Stone cartão só após 04:00 BRT
+CARTAO_CRON_MINUTE=0
+CARTAO_CRON_RETRY_HOUR=5
 CARTAO_CRON_TZ=America/Sao_Paulo
+
+PIX_CRON_ENABLED=true
+PIX_CRON_HOUR=4
+PIX_CRON_MINUTE=5
+# STONE_PIX_MERCHANT_ID = CNPJ 14 dígitos (não use o StoneCode do cartão)
 ```
 
 Subir **sem** `--reload` (evita job duplicado):

@@ -57,6 +57,11 @@ class OracleDB:
             cur.execute(sql, params or {})
             return cur.fetchone()
 
+    def fetchall(self, sql: str, params: dict[str, Any] | None = None) -> list[tuple]:
+        with self.cursor() as cur:
+            cur.execute(sql, params or {})
+            return list(cur.fetchall())
+
     def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
         with self.cursor() as cur:
             cur.execute(sql, params or {})
@@ -167,6 +172,35 @@ class TasyOracleRepository:
         if row:
             return int(row[0])
         return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)
+
+    def listar_caixa_receb_abertos_stone(
+        self,
+        dt_recebimento: str,
+        *,
+        nr_seq_caixa: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Recebimentos Stone com dt_fechamento IS NULL no dia informado.
+        Usado na confirmação diferida (1 FECHAR por caixa_receb unificado).
+        """
+        rows = self.db.fetchall(
+            ora.SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_DATA,
+            {
+                "dt_recebimento": dt_recebimento,
+                "nr_seq_caixa": nr_seq_caixa,
+            },
+        )
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            out.append(
+                {
+                    "nr_seq_caixa_rec": int(row[0]),
+                    "dt_recebimento": str(row[1]),
+                    "nr_seq_caixa": int(row[2]) if row[2] is not None else None,
+                    "nr_seq_trans_financ": int(row[3]) if row[3] is not None else None,
+                }
+            )
+        return out
 
     def inserir_caixa_receb(self, nr_seq_saldo: int, dt: str, cd_trans_fin: int) -> int:
         return self.db.execute_returning(
