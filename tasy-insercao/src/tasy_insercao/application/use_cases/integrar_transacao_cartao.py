@@ -24,10 +24,10 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case: Caixa → Dia → Recebimento (1 por caixa/dia) → Cartão (N) →
-    Documento agregado (soma). FECHAR não roda por cartão: confirmação diferida
-    (POST /interno/tesouraria/fechar-recebimentos-abertos) ou reprocesso status 9.
-    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
+    Use case: Caixa → Dia → Recebimento (1 por maquininha/serial no caixa+dia) →
+    Cartão (N) → Documento agregado (soma). FECHAR não roda por cartão: confirmação
+    diferida (POST /interno/tesouraria/fechar-recebimentos-abertos) ou reprocesso
+    status 9. Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
 
@@ -143,10 +143,15 @@ class IntegrarTransacaoCartao:
             )
 
             nr_seq_saldo = self.tasy.ensure_caixa_saldo_diario(cd_caixa, dt_str)
-            # 1 recebimento aberto por caixa+dia; vários cartões no mesmo recebimento
+            # 1 recebimento aberto por maquininha (serial) no caixa+dia; N cartões nele
             ensure_receb = getattr(self.tasy, "ensure_caixa_receb_aberto", None)
             if ensure_receb is not None:
-                nr_seq_receb = ensure_receb(nr_seq_saldo, dt_str, cd_trans_fin)
+                nr_seq_receb = ensure_receb(
+                    nr_seq_saldo,
+                    dt_str,
+                    cd_trans_fin,
+                    tx.nr_serie_maquininha,
+                )
             else:
                 nr_seq_receb = self.tasy.inserir_caixa_receb(
                     nr_seq_saldo, dt_str, cd_trans_fin
@@ -174,14 +179,17 @@ class IntegrarTransacaoCartao:
                 vl_doc = to_float_money(tx.vl_transacao)
 
             msg = (
-                f"Transação Integrada | caixa_receb={nr_seq_receb} | "
-                f"movto={nr_seq_movto} | doc_agregado_vl={vl_doc}"
+                f"Transação Integrada | serial={tx.nr_serie_maquininha} | "
+                f"caixa_receb={nr_seq_receb} | movto={nr_seq_movto} | "
+                f"doc_agregado_vl={vl_doc}"
             )
             self.staging.update_status(nr_seq_pg, StatusIntegracao.INTEGRADO.value, msg)
             logger.info(
-                "Inserido | id_stone=%s | caixa=%s | caixa_receb=%s | movto=%s | doc_vl=%s",
+                "Inserido | id_stone=%s | caixa=%s | serial=%s | "
+                "caixa_receb=%s | movto=%s | doc_vl=%s",
                 tx.id_stone,
                 cd_caixa,
+                tx.nr_serie_maquininha,
                 nr_seq_receb,
                 nr_seq_movto,
                 vl_doc,

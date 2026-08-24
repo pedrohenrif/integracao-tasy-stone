@@ -25,7 +25,11 @@ class TasyRepositoryPort(Protocol):
     def ensure_documento_por_id_stone(self, id_stone: str) -> bool: ...
     def ensure_caixa_saldo_diario(self, nr_seq_caixa: int, dt_saldo: str) -> int: ...
     def ensure_caixa_receb_aberto(
-        self, nr_seq_saldo: int, dt: str, cd_trans_fin: int
+        self,
+        nr_seq_saldo: int,
+        dt: str,
+        cd_trans_fin: int,
+        nr_serie_maquininha: str | None = None,
     ) -> int: ...
     def listar_caixa_receb_abertos_stone(
         self, dt_recebimento: str, *, nr_seq_caixa: int | None = None

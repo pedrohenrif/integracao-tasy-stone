@@ -162,13 +162,32 @@ class TasyOracleRepository:
         )
 
     def ensure_caixa_receb_aberto(
-        self, nr_seq_saldo: int, dt: str, cd_trans_fin: int
+        self,
+        nr_seq_saldo: int,
+        dt: str,
+        cd_trans_fin: int,
+        nr_serie_maquininha: str | None = None,
     ) -> int:
-        """Reusa recebimento Stone aberto do saldo (caixa+dia); cria se não houver."""
-        row = self.db.fetchone(
-            ora.SELECT_CAIXA_RECEB_ABERTO_STONE,
-            {"nr_seq_saldo_caixa": nr_seq_saldo},
-        )
+        """
+        Reusa recebimento Stone aberto do saldo+serial; cria se não houver.
+
+        Com serial: 1 caixa_receb por maquininha no mesmo caixa/dia.
+        Sem serial: fallback legado (1 aberto por saldo).
+        """
+        serial = (nr_serie_maquininha or "").strip()
+        if serial:
+            row = self.db.fetchone(
+                ora.SELECT_CAIXA_RECEB_ABERTO_STONE_POR_SERIAL,
+                {
+                    "nr_seq_saldo_caixa": nr_seq_saldo,
+                    "nr_serie_maquininha": serial,
+                },
+            )
+        else:
+            row = self.db.fetchone(
+                ora.SELECT_CAIXA_RECEB_ABERTO_STONE,
+                {"nr_seq_saldo_caixa": nr_seq_saldo},
+            )
         if row:
             return int(row[0])
         return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)

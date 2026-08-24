@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 import httpx
@@ -72,13 +73,22 @@ class StonePixClient:
             f"/merchant/{merchant}"
             f"/conciliation-file/pix/{reference_date}"
         )
-        # Cliente Stone: Basic + x-user-type. Body {} porque Content-Type json é obrigatório.
-        # follow_redirects=False: em redirect cross-host o httpx remove Authorization e a
-        # Stone responde 400 ClientIdentifier/ClientId or AccountId.
+        # PIX: sem Accept-Encoding (só cartão GET precisa gzip). Auth = Basic + x-user-type.
+        # follow_redirects=False evita strip do Authorization em redirect cross-host.
+        token = settings.STONE_API_TOKEN.strip()
+        basic = base64.b64encode(f"{token}:".encode("ascii")).decode("ascii")
         headers = {
-            **build_client_auth_headers(),
+            "Authorization": f"Basic {basic}",
+            "x-user-type": "client",
             "Accept": "application/json",
         }
+        # Variações: docs pedem Content-Type json; alguns gateways exigem AccountId no body.
+        attempts: list[tuple[str, dict | None]] = [
+            ("json_vazio", {}),
+            ("accountId", {"accountId": merchant}),
+            ("clientId", {"clientId": merchant}),
+            ("sem_body", None),
+        ]
         logger.info(
             "PIX request | início | date=%s | merchant=%s | method=POST | url=%s",
             reference_date,
@@ -86,31 +96,54 @@ class StonePixClient:
             url,
         )
 
+        last_body = ""
+        last_status = 0
         async with httpx.AsyncClient(timeout=90.0, follow_redirects=False) as client:
-            response = await client.post(url, headers=headers, json={})
-            if response.is_redirect:
-                loc = response.headers.get("location") or ""
-                raise PixFetchError(
-                    f"Stone PIX API {response.status_code} redirect inesperado "
-                    f"(location={loc[:120]}). Não seguimos redirect para preservar auth."
+            response = None
+            for label, payload in attempts:
+                if payload is None:
+                    response = await client.post(url, headers=headers)
+                else:
+                    response = await client.post(url, headers=headers, json=payload)
+                last_status = response.status_code
+                last_body = (response.text or "")[:500]
+                logger.info(
+                    "PIX request | tentativa=%s | http=%s | body=%s",
+                    label,
+                    last_status,
+                    last_body[:200].replace("\n", " "),
                 )
+                if response.is_redirect:
+                    loc = response.headers.get("location") or ""
+                    raise PixFetchError(
+                        f"Stone PIX API {response.status_code} redirect inesperado "
+                        f"(location={loc[:120]}). Não seguimos redirect para preservar auth."
+                    )
+                if response.status_code in (200, 202, 204):
+                    break
+                # Outro erro (403/401/404…) — não adianta tentar body diferente
+                if "ClientIdentifier" not in last_body and "ClientId" not in last_body:
+                    break
+            assert response is not None
             if response.status_code not in (200, 202, 204):
-                body = (response.text or "")[:500]
                 logger.error(
                     "PIX request | falha Stone | date=%s | http=%s | body=%s",
                     reference_date,
-                    response.status_code,
-                    body,
+                    last_status,
+                    last_body,
                 )
                 hint = ""
-                if "ClientIdentifier" in body or "ClientId" in body or "AccountId" in body:
+                if "ClientIdentifier" in last_body or "ClientId" in last_body:
                     hint = (
-                        " | Dica: (1) confira STONE_PIX_MERCHANT_ID=CNPJ da conta da chave; "
-                        "(2) cadastre webhook HTTPS antes (POST /pix/webhook/register); "
-                        "(3) chave deve ser Cliente Stone (sk_) com x-user-type: client."
+                        " | A chave sk_ autentica cartão, mas o endpoint PIX está exigindo "
+                        "ClientId/AccountId (fluxo de conciliadora). "
+                        "Abra chamado na Stone (meajuda@stone.com.br) pedindo liberação de "
+                        "conciliação PIX para Cliente Stone nesta chave/CNPJ "
+                        f"{merchant} (StoneCode {settings.STONE_MERCHANT_ID}). "
+                        "Enquanto isso, use POST /pix/conciliation/dev com sample."
                     )
                 raise PixFetchError(
-                    f"Stone PIX API {response.status_code}: {body[:350]}{hint}"
+                    f"Stone PIX API {last_status}: {last_body[:350]}{hint}"
                 )
 
             raw = decode_stone_body(response.content, response.headers) if response.content else b""

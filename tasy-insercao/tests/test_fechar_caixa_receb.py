@@ -6,12 +6,16 @@ from tasy_insercao.application.use_cases.integrar_transacao_cartao import Integr
 from tasy_insercao.domain.integracao.models import StatusIntegracao, TipoTransacaoCartao, TransacaoCartao
 
 
-def _tx(id_stone: str = "28963791511463") -> TransacaoCartao:
+def _tx(
+    id_stone: str = "28963791511463",
+    *,
+    serial: str = "PB09231S72079",
+) -> TransacaoCartao:
     return TransacaoCartao(
         id_stone=id_stone,
         vl_transacao=Decimal("7"),
         dt_movimentacao=datetime(2026, 7, 8, 7, 28, 45),
-        nr_serie_maquininha="PB09231S72079",
+        nr_serie_maquininha=serial,
         cd_autorizacao="520973",
         qt_parcelas=1,
         ie_transacao_parcelada=False,
@@ -53,7 +57,9 @@ def test_unifica_recebimento_e_documento_sem_fechar_automatico():
 
     assert result.status == StatusIntegracao.INTEGRADO
     assert order == ["receb", "movto", "doc"]
-    tasy.ensure_caixa_receb_aberto.assert_called_once_with(50, "2026-07-08", 123)
+    tasy.ensure_caixa_receb_aberto.assert_called_once_with(
+        50, "2026-07-08", 123, "PB09231S72079"
+    )
     tasy.upsert_documento_agregado.assert_called_once()
     doc_kw = tasy.upsert_documento_agregado.call_args.kwargs
     assert doc_kw["nr_seq_caixa_rec"] == 88
@@ -61,9 +67,10 @@ def test_unifica_recebimento_e_documento_sem_fechar_automatico():
     tasy.fechar_caixa_receb.assert_not_called()
     tasy.inserir_caixa_receb.assert_not_called()
     assert "doc_agregado" in result.mensagem.lower() or "caixa_receb=88" in result.mensagem
+    assert "serial=PB09231S72079" in result.mensagem
 
 
-def test_segunda_tx_reusa_mesmo_recebimento():
+def test_segunda_tx_mesmo_serial_reusa_mesmo_recebimento():
     staging, tasy = _setup_ok()
     tasy.ensure_caixa_receb_aberto.return_value = 88
     tasy.upsert_documento_agregado.return_value = 15.0
@@ -73,10 +80,41 @@ def test_segunda_tx_reusa_mesmo_recebimento():
 
     assert result.status == StatusIntegracao.INTEGRADO
     assert result.nr_seq_caixa_receb == 88
-    tasy.ensure_caixa_receb_aberto.assert_called_once()
+    tasy.ensure_caixa_receb_aberto.assert_called_once_with(
+        50, "2026-07-08", 123, "PB09231S72079"
+    )
     assert tasy.upsert_documento_agregado.call_args.kwargs["nr_seq_caixa_rec"] == 88
     tasy.fechar_caixa_receb.assert_not_called()
 
+
+def test_dois_seriais_mesmo_caixa_recebimentos_distintos():
+    """Mesmo cd_caixa: cada maquininha abre/reusa seu próprio caixa_receb."""
+    staging, tasy = _setup_ok()
+    recebs_por_serial = {
+        "PB09231S72079": 88,
+        "PB09243M78791": 99,
+    }
+
+    def _ensure(saldo, dt, trans, serial=None):
+        assert saldo == 50
+        assert serial in recebs_por_serial
+        return recebs_por_serial[serial]
+
+    tasy.ensure_caixa_receb_aberto.side_effect = _ensure
+    tasy.inserir_movto_cartao.side_effect = [77, 78]
+    tasy.upsert_documento_agregado.side_effect = [7.0, 13.0]
+
+    uc = IntegrarTransacaoCartao(staging, tasy)
+    r1 = uc.execute(_tx("id-a", serial="PB09231S72079"))
+    r2 = uc.execute(_tx("id-b", serial="PB09243M78791"))
+
+    assert r1.status == StatusIntegracao.INTEGRADO
+    assert r2.status == StatusIntegracao.INTEGRADO
+    assert r1.nr_seq_caixa_receb == 88
+    assert r2.nr_seq_caixa_receb == 99
+    assert tasy.ensure_caixa_receb_aberto.call_count == 2
+    docs = [c.kwargs["nr_seq_caixa_rec"] for c in tasy.upsert_documento_agregado.call_args_list]
+    assert docs == [88, 99]
 
 def test_fechar_falha_purge_so_se_unico_movto():
     staging, tasy = _setup_ok()

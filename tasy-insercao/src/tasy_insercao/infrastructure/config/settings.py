@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Retry / anti-perda
     RETRY_MAX_ATTEMPTS: int = 5
     RETRY_DELAYS_SECONDS: str = "30,60,120,300,600"  # backoff por tentativa
+    # Timeout do insert Oracle por mensagem (evita travar prefetch=1 a madrugada inteira)
+    CONSUMER_HANDLER_TIMEOUT_SECONDS: int = 180
+    # Log periódico confirmando que o consumer está vivo e à escuta
+    CONSUMER_HEARTBEAT_SECONDS: int = 300
+    CONSUMER_RECONNECT_DELAY_SECONDS: int = 5
 
     # Postgres staging
     POSTGRES_USER: str = ""
