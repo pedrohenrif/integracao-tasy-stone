@@ -21,6 +21,7 @@ from tasy_insercao.interfaces.api.routers import interno_tesouraria as interno_t
 from tasy_insercao.interfaces.api.routers import purge as purge_router
 from tasy_insercao.interfaces.api.routers import reprocessar as reprocessar_router
 from tasy_insercao.interfaces.api.routers import scheduler as scheduler_router
+from tasy_insercao.interfaces.api.routers import tesouraria as tesouraria_router
 from tasy_insercao.interfaces.api.routers.audit import registrar_api_acesso
 
 logger = get_logger(__name__)
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(purge_router.router)
     app.include_router(audit_router.router)
     app.include_router(scheduler_router.router)
+    app.include_router(tesouraria_router.router)
     app.include_router(interno_tesouraria_router.router)
     return app
 

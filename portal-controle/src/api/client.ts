@@ -235,6 +235,26 @@ export async function reprocessarDiaApi(date: string) {
   });
 }
 
+export async function fecharRecebimentosAbertosApi(date: string) {
+  const q = new URLSearchParams({ date });
+  return request<{
+    ok: boolean;
+    date: string;
+    encontrados: number;
+    fechados: number;
+    falhas: number;
+    itens?: Array<{
+      nr_seq_caixa_rec: number;
+      nr_seq_caixa?: number | null;
+      ok: boolean;
+      vl_troco?: number;
+      erro?: string;
+    }>;
+  }>(`/api/tesouraria/fechar-recebimentos-abertos?${q}`, {
+    method: "POST",
+  });
+}
+
 export async function reprocessarRegistroApi(body: {
   nr_sequencia: number;
   nr_serie_maquininha?: string;
