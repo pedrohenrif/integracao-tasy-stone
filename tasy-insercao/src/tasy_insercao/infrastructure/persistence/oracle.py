@@ -280,6 +280,27 @@ class TasyOracleRepository:
             )
         return vl
 
+    def confirmar_caixa_receb_stone(
+        self, nr_seq_caixa_rec: int, dt_recebimento: str
+    ) -> float:
+        """
+        Upsert doc agregado + FECHAR deste recebimento (1 maquininha).
+        Usado no debounce após o último cartão do serial.
+        """
+        nr = int(nr_seq_caixa_rec)
+        dt = str(dt_recebimento)[:10]
+        cr = self.db.fetchone(
+            ora.SELECT_CAIXA_RECEB_TRANS_E_DATA,
+            {"nr_seq_caixa_rec": nr},
+        )
+        if cr and cr[0] is not None:
+            self.upsert_documento_agregado(
+                nr_seq_caixa_rec=nr,
+                nr_seq_trans_financ=int(cr[0]),
+                dt_transacao=cr[1] if cr[1] is not None else dt,
+            )
+        return self.fechar_caixa_receb(nr, dt)
+
     def count_movtos_caixa_receb(self, nr_seq_caixa_rec: int) -> int:
         row = self.db.fetchone(
             ora.SELECT_QTD_MOVTO_POR_CAIXA_RECEB,

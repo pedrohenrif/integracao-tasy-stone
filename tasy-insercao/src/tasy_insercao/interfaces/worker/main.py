@@ -17,6 +17,10 @@ from tasy_insercao.domain.integracao.models import (
 )
 from tasy_insercao.infrastructure.config.logging import get_logger, setup_logging
 from tasy_insercao.infrastructure.config.settings import settings
+from tasy_insercao.infrastructure.messaging.fechar_debounce import (
+    pending_fechar_count,
+    schedule_fechar_recebimento,
+)
 from tasy_insercao.infrastructure.messaging.rabbit import (
     RetryPublisher,
     close_rabbitmq,
@@ -120,6 +124,22 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
 
         if resultado.status == StatusIntegracao.INTEGRADO:
             logger.info("Inserido | cartao | id_stone=%s | %s", resultado.id_stone, resultado.mensagem)
+            if resultado.nr_seq_caixa_receb:
+                dt_saldo = evento.transaction.dt_movimentacao
+                dt_str = (
+                    dt_saldo.date().isoformat()
+                    if hasattr(dt_saldo, "date")
+                    else str(dt_saldo)[:10]
+                )
+                cartao_uc, _ = _build_services()
+                confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
+                if confirmar is not None:
+                    schedule_fechar_recebimento(
+                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
+                        dt_recebimento=dt_str,
+                        confirmar_fn=confirmar,
+                        serial=evento.transaction.nr_serie_maquininha,
+                    )
             return
 
         if resultado.status == StatusIntegracao.SEM_TESOURARIA:
@@ -171,6 +191,22 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
 
         if resultado.status == StatusIntegracao.INTEGRADO:
             logger.info("Inserido | pix | id_stone=%s | %s", resultado.id_stone, resultado.mensagem)
+            if resultado.nr_seq_caixa_receb:
+                dt_saldo = evento.transaction.dt_movimentacao
+                dt_str = (
+                    dt_saldo.date().isoformat()
+                    if hasattr(dt_saldo, "date")
+                    else str(dt_saldo)[:10]
+                )
+                cartao_uc, _ = _build_services()
+                confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
+                if confirmar is not None:
+                    schedule_fechar_recebimento(
+                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
+                        dt_recebimento=dt_str,
+                        confirmar_fn=confirmar,
+                        serial=evento.transaction.nr_serie_maquininha,
+                    )
             return
 
         if resultado.status == StatusIntegracao.SEM_TESOURARIA:
@@ -205,9 +241,10 @@ async def _heartbeat_loop(stop_event: asyncio.Event) -> None:
             return
         except asyncio.TimeoutError:
             logger.info(
-                "Consumer heartbeat | a escuta | cartao=%s | pix=%s",
+                "Consumer heartbeat | a escuta | cartao=%s | pix=%s | fechar_pendentes=%s",
                 settings.RABBITMQ_QUEUE_CARTAO,
                 settings.RABBITMQ_QUEUE_PIX,
+                pending_fechar_count(),
             )
 
 

@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Token interno para stone-extracao gravar eventos de scheduler na auditoria
     PORTAL_INTERNAL_TOKEN: str = ""
 
+    # Após último cartão da maquininha (debounce): confirma aquele caixa_receb.
+    # true = agenda FECHAR N segundos após o último insert daquele recebimento.
+    FECHAR_RECEB_DEBOUNCE_ENABLED: bool = True
+    FECHAR_RECEB_DEBOUNCE_SECONDS: int = 120
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"
 
