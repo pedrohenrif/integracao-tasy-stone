@@ -168,7 +168,7 @@ export function DashboardPage() {
             </button>
             <span className="muted small">
               Extrair → fila. Confirmar → FECHAR no Tasy os recebimentos Stone abertos do dia
-              (também roda sozinho ~45 min após o último cartão de cada maquininha).
+              (também roda sozinho ~20 min após o último cartão de cada maquininha).
             </span>
           </div>
         </div>

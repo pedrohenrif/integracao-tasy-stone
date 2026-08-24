@@ -22,7 +22,9 @@ SELECT nr_sequencia FROM (
 """
 
 # Um recebimento Stone aberto por saldo + maquininha (serial).
-# Identifica o recebimento pelos movtos: ds_observacao = 'Maquininha - {serial} | ...'
+# Obs pode ter prefixo (PREPAGO | / PIX | / SEM_TESOURARIA |):
+#   'Maquininha - {serial} | ID stone - ...'
+#   'PREPAGO | Maquininha - {serial} | ID stone - ...'
 SELECT_CAIXA_RECEB_ABERTO_STONE_POR_SERIAL = """
 SELECT nr_sequencia FROM (
     SELECT cr.nr_sequencia
@@ -36,7 +38,7 @@ SELECT nr_sequencia FROM (
           WHERE m.nr_seq_caixa_rec = cr.nr_sequencia
             AND m.dt_cancelamento IS NULL
             AND UPPER(m.ds_observacao) LIKE
-                'MAQUININHA - ' || UPPER(:nr_serie_maquininha) || ' |%'
+                '%MAQUININHA - ' || UPPER(:nr_serie_maquininha) || ' |%'
       )
     ORDER BY cr.nr_sequencia
 ) WHERE ROWNUM = 1

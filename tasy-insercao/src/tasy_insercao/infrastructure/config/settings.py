@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # Após último cartão da maquininha (debounce): confirma aquele caixa_receb.
     # true = agenda FECHAR N segundos após o último insert daquele recebimento.
     FECHAR_RECEB_DEBOUNCE_ENABLED: bool = True
-    FECHAR_RECEB_DEBOUNCE_SECONDS: int = 2700  # 45 min — evita fechar no meio do lote
+    FECHAR_RECEB_DEBOUNCE_SECONDS: int = 1200  # 20 min — evita fechar no meio do lote
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"
 
