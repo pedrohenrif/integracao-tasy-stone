@@ -27,7 +27,7 @@ class IntegrarTransacaoCartao:
     Use case: Caixa -> Dia -> Recebimento (1 por maquininha/serial no caixa+dia) ->
     Cartao (N) -> Documento agregado (soma). Tasy so permite 1 lote aberto por caixa:
     ao trocar de serial, FECHAR o anterior antes de abrir o proximo; o ultimo
-    recebimento fecha apos quiet period sem novo cartao naquela maquininha.
+    recebimento fecha quando a fila de cartao esvazia (fim do lote).
     Sem maquininha/caixa: so movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """

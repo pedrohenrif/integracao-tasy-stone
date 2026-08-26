@@ -17,8 +17,8 @@ from tasy_insercao.domain.integracao.models import (
 )
 from tasy_insercao.infrastructure.config.logging import get_logger, setup_logging
 from tasy_insercao.infrastructure.config.settings import settings
-from tasy_insercao.infrastructure.messaging.fechar_debounce import (
-    schedule_fechar_recebimento,
+from tasy_insercao.infrastructure.messaging.fechar_quando_fila_vazia import (
+    fechar_se_fila_cartao_vazia,
 )
 from tasy_insercao.infrastructure.messaging.rabbit import (
     RetryPublisher,
@@ -40,6 +40,7 @@ _ora_db: OracleDB | None = None
 _use_case_cartao: IntegrarTransacaoCartao | None = None
 _use_case_pix: IntegrarTransacaoPix | None = None
 _retry_publisher: RetryPublisher | None = None
+_consumer_channel: Any = None
 
 
 def _build_services() -> tuple[IntegrarTransacaoCartao, IntegrarTransacaoPix]:
@@ -123,7 +124,7 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
 
         if resultado.status == StatusIntegracao.INTEGRADO:
             logger.info("Inserido | cartao | id_stone=%s | %s", resultado.id_stone, resultado.mensagem)
-            if resultado.nr_seq_caixa_receb:
+            if resultado.nr_seq_caixa_receb and _consumer_channel is not None:
                 dt_saldo = evento.transaction.dt_movimentacao
                 dt_str = (
                     dt_saldo.date().isoformat()
@@ -133,7 +134,8 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
                 cartao_uc, _ = _build_services()
                 confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
                 if confirmar is not None:
-                    schedule_fechar_recebimento(
+                    await fechar_se_fila_cartao_vazia(
+                        _consumer_channel,
                         nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
                         dt_recebimento=dt_str,
                         confirmar_fn=confirmar,
@@ -190,22 +192,7 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
 
         if resultado.status == StatusIntegracao.INTEGRADO:
             logger.info("Inserido | pix | id_stone=%s | %s", resultado.id_stone, resultado.mensagem)
-            if resultado.nr_seq_caixa_receb:
-                dt_saldo = evento.transaction.dt_movimentacao
-                dt_str = (
-                    dt_saldo.date().isoformat()
-                    if hasattr(dt_saldo, "date")
-                    else str(dt_saldo)[:10]
-                )
-                cartao_uc, _ = _build_services()
-                confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
-                if confirmar is not None:
-                    schedule_fechar_recebimento(
-                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
-                        dt_recebimento=dt_str,
-                        confirmar_fn=confirmar,
-                        serial=evento.transaction.nr_serie_maquininha,
-                    )
+            # PIX: FECHAR so na troca de serial (ensure). Nao usa "fila cartao vazia".
             return
 
         if resultado.status == StatusIntegracao.SEM_TESOURARIA:
@@ -247,13 +234,14 @@ async def _heartbeat_loop(stop_event: asyncio.Event) -> None:
 
 
 async def _run_session(stop_event: asyncio.Event) -> None:
-    """Uma sessão Rabbit: connect → consume → espera stop ou queda da conexão."""
-    global _retry_publisher
+    """Uma sessão Rabbit: connect -> consume -> espera stop ou queda da conexão."""
+    global _retry_publisher, _consumer_channel
     connection = await connect_rabbitmq()
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=1)
     queues = await declare_topology(channel)
     _retry_publisher = RetryPublisher(channel)
+    _consumer_channel = channel
 
     logger.info(
         "Consumer iniciado | cartao=%s | pix=%s | max_attempts=%s | handler_timeout=%ss",
@@ -306,6 +294,7 @@ async def _run_session(stop_event: asyncio.Event) -> None:
             except Exception:
                 pass
         _reset_connections()
+        _consumer_channel = None
         await close_rabbitmq(connection)
 
 

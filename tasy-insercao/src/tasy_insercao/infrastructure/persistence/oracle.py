@@ -226,14 +226,6 @@ class TasyOracleRepository:
                 nr,
                 dt_rec,
             )
-            try:
-                from tasy_insercao.infrastructure.messaging.fechar_debounce import (
-                    cancel_fechar_recebimento,
-                )
-
-                cancel_fechar_recebimento(nr)
-            except Exception:
-                pass
             self.confirmar_caixa_receb_stone(nr, dt_rec)
 
     def listar_caixa_receb_abertos_stone(
