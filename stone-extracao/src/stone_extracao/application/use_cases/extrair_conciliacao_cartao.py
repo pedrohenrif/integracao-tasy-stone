@@ -125,7 +125,12 @@ class ExtrairConciliacaoCartao:
 
         now = datetime.now(timezone.utc)
         published = 0
-        for tx in transactions:
+        # Ordena por serial para o consumer FECHAR um recebimento antes de abrir o da
+        # próxima maquininha (Tasy: 1 lote aberto por caixa).
+        for tx in sorted(
+            transactions,
+            key=lambda t: (t.nr_serie_maquininha or "", t.id_stone or ""),
+        ):
             evento = EventoFilaCartao(
                 received_at=now,
                 first_seen_at=now,

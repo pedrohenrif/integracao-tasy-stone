@@ -25,9 +25,9 @@ logger = get_logger(__name__)
 class IntegrarTransacaoCartao:
     """
     Use case: Caixa → Dia → Recebimento (1 por maquininha/serial no caixa+dia) →
-    Cartão (N) → Documento agregado (soma). FECHAR não roda por cartão: confirmação
-    diferida (POST /interno/tesouraria/fechar-recebimentos-abertos) ou reprocesso
-    status 9. Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
+    Cartão (N) → Documento agregado (soma). Tasy só permite 1 lote aberto por caixa:
+    ao trocar de serial, FECHAR o recebimento anterior antes de abrir o próximo.
+    Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
 

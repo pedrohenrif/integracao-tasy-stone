@@ -44,6 +44,18 @@ SELECT nr_sequencia FROM (
 ) WHERE ROWNUM = 1
 """
 
+# Recebimentos Stone abertos no mesmo saldo diário (caixa+dia).
+SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_SALDO = """
+SELECT
+    cr.nr_sequencia,
+    TO_CHAR(cr.dt_recebimento, 'YYYY-MM-DD') AS dt_recebimento
+FROM caixa_receb cr
+WHERE cr.nr_seq_saldo_caixa = :nr_seq_saldo_caixa
+  AND cr.nm_usuario = 'stone'
+  AND cr.dt_fechamento IS NULL
+ORDER BY cr.nr_sequencia
+"""
+
 # Recebimentos Stone abertos de um dia (confirmação diferida pós-lote).
 # :nr_seq_caixa opcional — None fecha todos os caixas do dia.
 SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_DATA = """

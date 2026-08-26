@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  fecharRecebimentosAbertosApi,
-  filasApi,
-  registrosApi,
-  reprocessarDiaApi,
-} from "../api/client";
+import { filasApi, registrosApi, reprocessarDiaApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { FilaInfo, ResumoTotais } from "../types";
 
@@ -21,7 +16,6 @@ export function DashboardPage() {
   const [msg, setMsg] = useState("");
   const [dia, setDia] = useState("");
   const [busy, setBusy] = useState(false);
-  const [busyFechar, setBusyFechar] = useState(false);
 
   useEffect(() => {
     Promise.all([registrosApi({ limit: "1" }), filasApi()])
@@ -69,32 +63,6 @@ export function DashboardPage() {
       setError(e instanceof Error ? e.message : "Erro ao executar dia");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function onConfirmarRecebimentos() {
-    if (!dia) return;
-    setBusyFechar(true);
-    setError("");
-    setMsg("");
-    try {
-      const res = await fecharRecebimentosAbertosApi(dia);
-      setMsg(
-        `Confirmar recebimentos ${res.date}: encontrados ${res.encontrados}, ` +
-          `fechados ${res.fechados}, falhas ${res.falhas}.`,
-      );
-      if (res.falhas > 0) {
-        const errs = (res.itens || [])
-          .filter((i) => !i.ok)
-          .map((i) => `#${i.nr_seq_caixa_rec}: ${i.erro || "erro"}`)
-          .slice(0, 5)
-          .join(" | ");
-        setError(errs || `${res.falhas} recebimento(s) falharam ao confirmar`);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao confirmar recebimentos");
-    } finally {
-      setBusyFechar(false);
     }
   }
 
@@ -157,18 +125,9 @@ export function DashboardPage() {
             >
               Extrair cartão + PIX do dia
             </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busyFechar || !dia}
-              onClick={() => void onConfirmarRecebimentos()}
-              title="Fecha no Tasy todos os recebimentos Stone ainda abertos deste dia (1 por maquininha)"
-            >
-              Confirmar recebimentos do dia
-            </button>
             <span className="muted small">
-              Extrair → fila. Confirmar → FECHAR no Tasy os recebimentos Stone abertos do dia
-              (também roda sozinho ~20 min após o último cartão de cada maquininha).
+              Cartão → fila (1 recebimento por maquininha; ao trocar de serial o anterior é
+              confirmado no Tasy). PIX solicita extrato (webhook assíncrono).
             </span>
           </div>
         </div>
