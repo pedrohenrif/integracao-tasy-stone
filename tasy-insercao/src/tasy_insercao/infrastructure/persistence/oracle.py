@@ -226,6 +226,14 @@ class TasyOracleRepository:
                 nr,
                 dt_rec,
             )
+            try:
+                from tasy_insercao.infrastructure.messaging.fechar_debounce import (
+                    cancel_fechar_recebimento,
+                )
+
+                cancel_fechar_recebimento(nr)
+            except Exception:
+                pass
             self.confirmar_caixa_receb_stone(nr, dt_rec)
 
     def listar_caixa_receb_abertos_stone(
@@ -321,7 +329,7 @@ class TasyOracleRepository:
     ) -> float:
         """
         Upsert doc agregado + FECHAR deste recebimento (1 maquininha).
-        Chamado ao trocar de serial no mesmo caixa (só 1 lote aberto por vez).
+        No-op se já estiver fechado (ex.: FECHAR na troca + quiet period depois).
         """
         nr = int(nr_seq_caixa_rec)
         dt = str(dt_recebimento)[:10]
@@ -329,7 +337,16 @@ class TasyOracleRepository:
             ora.SELECT_CAIXA_RECEB_TRANS_E_DATA,
             {"nr_seq_caixa_rec": nr},
         )
-        if cr and cr[0] is not None:
+        if not cr:
+            logger.warning("confirmar_caixa_receb_stone | caixa_receb=%s não encontrado", nr)
+            return 0.0
+        if str(cr[2] or "N").upper() == "S":
+            logger.info(
+                "confirmar_caixa_receb_stone | já fechado | caixa_receb=%s",
+                nr,
+            )
+            return 0.0
+        if cr[0] is not None:
             self.upsert_documento_agregado(
                 nr_seq_caixa_rec=nr,
                 nr_seq_trans_financ=int(cr[0]),

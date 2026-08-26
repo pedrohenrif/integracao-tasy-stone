@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Token interno para stone-extracao gravar eventos de scheduler na auditoria
     PORTAL_INTERNAL_TOKEN: str = ""
 
+    # Fecha o *último* recebimento aberto após quiet period (troca de serial já FECHA na hora).
+    FECHAR_ULTIMO_RECEB_ENABLED: bool = True
+    FECHAR_ULTIMO_RECEB_SECONDS: int = 120  # 2 min após o último cartão da maquininha
+
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"
 

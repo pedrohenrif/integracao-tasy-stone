@@ -23,10 +23,10 @@ logger = get_logger(__name__)
 
 
 class IntegrarTransacaoCartao:
-    """
     Use case: Caixa → Dia → Recebimento (1 por maquininha/serial no caixa+dia) →
     Cartão (N) → Documento agregado (soma). Tasy só permite 1 lote aberto por caixa:
-    ao trocar de serial, FECHAR o recebimento anterior antes de abrir o próximo.
+    ao trocar de serial, FECHAR o anterior antes de abrir o próximo; o último
+    recebimento fecha após quiet period sem novo cartão naquela maquininha.
     Sem maquininha/caixa: só movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """

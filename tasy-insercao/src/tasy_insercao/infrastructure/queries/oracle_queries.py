@@ -99,7 +99,10 @@ WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
 """
 
 SELECT_CAIXA_RECEB_TRANS_E_DATA = """
-SELECT nr_seq_trans_financ, dt_recebimento
+SELECT
+    nr_seq_trans_financ,
+    dt_recebimento,
+    CASE WHEN dt_fechamento IS NULL THEN 'N' ELSE 'S' END AS ja_fechado
 FROM caixa_receb
 WHERE nr_sequencia = :nr_seq_caixa_rec
 """
