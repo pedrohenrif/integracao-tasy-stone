@@ -126,8 +126,8 @@ export function DashboardPage() {
               Extrair cartão + PIX do dia
             </button>
             <span className="muted small">
-              Cartão → fila (1 recebimento por maquininha; ao trocar de serial o anterior é
-              confirmado no Tasy). PIX solicita extrato (webhook assíncrono).
+              Cartão + PIX → fila. 1 recebimento por caixa/dia (todas as maquininhas);
+              FECHAR quando as filas esvaziam.
             </span>
           </div>
         </div>

@@ -12,9 +12,8 @@ from tasy_insercao.infrastructure.config.settings import settings
 logger = get_logger(__name__)
 
 
-async def _mensagens_prontas_cartao(channel: AbstractChannel) -> int | None:
-    """Retorna messages_ready da fila de cartao, ou None se nao conseguir ler."""
-    queue_name = settings.RABBITMQ_QUEUE_CARTAO
+async def _mensagens_prontas(channel: AbstractChannel, queue_name: str) -> int | None:
+    """Retorna messages_ready da fila, ou None se nao conseguir ler."""
     try:
         q = await channel.declare_queue(queue_name, durable=True, passive=True)
         result = getattr(q, "declaration_result", None)
@@ -26,7 +25,7 @@ async def _mensagens_prontas_cartao(channel: AbstractChannel) -> int | None:
         return None
 
 
-async def fechar_se_fila_cartao_vazia(
+async def fechar_se_filas_vazias(
     channel: AbstractChannel,
     *,
     nr_seq_caixa_rec: int,
@@ -35,28 +34,32 @@ async def fechar_se_fila_cartao_vazia(
     serial: str | None = None,
 ) -> bool:
     """
-    FECHAR o recebimento atual quando a fila de cartao nao tem mais msgs prontas.
+    FECHAR o recebimento unificado (1 por caixa) quando cartao e PIX nao tem msgs prontas.
 
-    - Troca de serial: FECHAR imediato no ensure (outro recebimento).
-    - Ultimo serial do lote: FECHAR aqui, sem espera de N minutos.
+    Assim o lote fecha no fim (sem timer) e PIX/cartao no mesmo caixa_receb nao
+    dispara FECHAR enquanto a outra fila ainda tem trabalho.
     """
     if not settings.FECHAR_ULTIMO_RECEB_ENABLED:
         return False
 
-    ready = await _mensagens_prontas_cartao(channel)
-    if ready is None:
+    ready_cartao = await _mensagens_prontas(channel, settings.RABBITMQ_QUEUE_CARTAO)
+    ready_pix = await _mensagens_prontas(channel, settings.RABBITMQ_QUEUE_PIX)
+    if ready_cartao is None or ready_pix is None:
         return False
-    if ready > 0:
+
+    if ready_cartao > 0 or ready_pix > 0:
         logger.info(
-            "FECHAR ultimo | fila ainda tem msgs | ready=%s | caixa_receb=%s | serial=%s",
-            ready,
+            "FECHAR unificado | filas ainda tem msgs | cartao=%s | pix=%s | "
+            "caixa_receb=%s | serial=%s",
+            ready_cartao,
+            ready_pix,
             nr_seq_caixa_rec,
             serial or "-",
         )
         return False
 
     logger.info(
-        "FECHAR ultimo | fila vazia | executando | caixa_receb=%s | serial=%s | dt=%s",
+        "FECHAR unificado | filas vazias | executando | caixa_receb=%s | serial=%s | dt=%s",
         nr_seq_caixa_rec,
         serial or "-",
         dt_recebimento,
@@ -66,15 +69,33 @@ async def fechar_se_fila_cartao_vazia(
             confirmar_fn, int(nr_seq_caixa_rec), str(dt_recebimento)[:10]
         )
         logger.info(
-            "FECHAR ultimo | ok | caixa_receb=%s | serial=%s",
+            "FECHAR unificado | ok | caixa_receb=%s | serial=%s",
             nr_seq_caixa_rec,
             serial or "-",
         )
         return True
     except Exception:
         logger.exception(
-            "FECHAR ultimo | falha | caixa_receb=%s | serial=%s",
+            "FECHAR unificado | falha | caixa_receb=%s | serial=%s",
             nr_seq_caixa_rec,
             serial or "-",
         )
         return False
+
+
+# Alias legado (worker / testes antigos)
+async def fechar_se_fila_cartao_vazia(
+    channel: AbstractChannel,
+    *,
+    nr_seq_caixa_rec: int,
+    dt_recebimento: str,
+    confirmar_fn: Callable[[int, str], Any],
+    serial: str | None = None,
+) -> bool:
+    return await fechar_se_filas_vazias(
+        channel,
+        nr_seq_caixa_rec=nr_seq_caixa_rec,
+        dt_recebimento=dt_recebimento,
+        confirmar_fn=confirmar_fn,
+        serial=serial,
+    )

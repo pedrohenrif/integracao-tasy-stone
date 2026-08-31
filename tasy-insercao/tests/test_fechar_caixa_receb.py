@@ -87,20 +87,10 @@ def test_segunda_tx_mesmo_serial_reusa_mesmo_recebimento():
     tasy.fechar_caixa_receb.assert_not_called()
 
 
-def test_dois_seriais_mesmo_caixa_recebimentos_distintos():
-    """Mesmo cd_caixa: cada maquininha abre/reusa seu próprio caixa_receb."""
+def test_dois_seriais_mesmo_caixa_mesmo_recebimento():
+    """Mesmo cd_caixa: seriais diferentes reusam o mesmo caixa_receb unificado."""
     staging, tasy = _setup_ok()
-    recebs_por_serial = {
-        "PB09231S72079": 88,
-        "PB09243M78791": 99,
-    }
-
-    def _ensure(saldo, dt, trans, serial=None):
-        assert saldo == 50
-        assert serial in recebs_por_serial
-        return recebs_por_serial[serial]
-
-    tasy.ensure_caixa_receb_aberto.side_effect = _ensure
+    tasy.ensure_caixa_receb_aberto.return_value = 88
     tasy.inserir_movto_cartao.side_effect = [77, 78]
     tasy.upsert_documento_agregado.side_effect = [7.0, 13.0]
 
@@ -111,10 +101,10 @@ def test_dois_seriais_mesmo_caixa_recebimentos_distintos():
     assert r1.status == StatusIntegracao.INTEGRADO
     assert r2.status == StatusIntegracao.INTEGRADO
     assert r1.nr_seq_caixa_receb == 88
-    assert r2.nr_seq_caixa_receb == 99
+    assert r2.nr_seq_caixa_receb == 88
     assert tasy.ensure_caixa_receb_aberto.call_count == 2
     docs = [c.kwargs["nr_seq_caixa_rec"] for c in tasy.upsert_documento_agregado.call_args_list]
-    assert docs == [88, 99]
+    assert docs == [88, 88]
 
 def test_fechar_falha_purge_so_se_unico_movto():
     staging, tasy = _setup_ok()

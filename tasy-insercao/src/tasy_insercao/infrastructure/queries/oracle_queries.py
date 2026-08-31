@@ -9,7 +9,8 @@ WHERE
     AND dt_saldo = TO_DATE(:dt_saldo, 'YYYY-MM-DD')
 """
 
-# Um recebimento Stone aberto por saldo diário (caixa + dia) — legado / fallback.
+# Um recebimento Stone aberto por saldo diário (caixa + dia).
+# Todas as maquininhas do caixa compartilham o mesmo caixa_receb.
 SELECT_CAIXA_RECEB_ABERTO_STONE = """
 SELECT nr_sequencia FROM (
     SELECT cr.nr_sequencia
@@ -17,29 +18,6 @@ SELECT nr_sequencia FROM (
     WHERE cr.nr_seq_saldo_caixa = :nr_seq_saldo_caixa
       AND cr.nm_usuario = 'stone'
       AND cr.dt_fechamento IS NULL
-    ORDER BY cr.nr_sequencia
-) WHERE ROWNUM = 1
-"""
-
-# Um recebimento Stone aberto por saldo + maquininha (serial).
-# Obs pode ter prefixo (PREPAGO | / PIX | / SEM_TESOURARIA |):
-#   'Maquininha - {serial} | ID stone - ...'
-#   'PREPAGO | Maquininha - {serial} | ID stone - ...'
-SELECT_CAIXA_RECEB_ABERTO_STONE_POR_SERIAL = """
-SELECT nr_sequencia FROM (
-    SELECT cr.nr_sequencia
-    FROM caixa_receb cr
-    WHERE cr.nr_seq_saldo_caixa = :nr_seq_saldo_caixa
-      AND cr.nm_usuario = 'stone'
-      AND cr.dt_fechamento IS NULL
-      AND EXISTS (
-          SELECT 1
-          FROM movto_cartao_cr m
-          WHERE m.nr_seq_caixa_rec = cr.nr_sequencia
-            AND m.dt_cancelamento IS NULL
-            AND UPPER(m.ds_observacao) LIKE
-                '%MAQUININHA - ' || UPPER(:nr_serie_maquininha) || ' |%'
-      )
     ORDER BY cr.nr_sequencia
 ) WHERE ROWNUM = 1
 """

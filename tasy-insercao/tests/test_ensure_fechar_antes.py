@@ -3,48 +3,43 @@ from unittest.mock import MagicMock
 from tasy_insercao.infrastructure.persistence.oracle import TasyOracleRepository
 
 
-def test_ensure_fecha_outro_serial_antes_de_abrir():
-    """Tasy: 1 lote aberto/caixa — ao abrir serial B, FECHAR o aberto de A."""
+def test_ensure_reusa_unico_recebimento_do_caixa():
+    """1 recebimento aberto por caixa+dia — serial nao cria outro."""
     db = MagicMock()
     repo = TasyOracleRepository(db)
-    repo.confirmar_caixa_receb_stone = MagicMock(return_value=0.0)
     repo.inserir_caixa_receb = MagicMock(return_value=99)
 
-    db.fetchone.return_value = None  # sem aberto do serial B
-    db.fetchall.return_value = [(88, "2026-08-23")]  # aberto do serial A
+    db.fetchone.return_value = (88,)  # aberto do saldo
 
-    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 930, "SERIAL-B")
+    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 930, "SERIAL-A")
+
+    assert nr == 88
+    repo.inserir_caixa_receb.assert_not_called()
+    db.fetchone.assert_called_once()
+
+
+def test_ensure_cria_quando_nao_ha_aberto():
+    db = MagicMock()
+    repo = TasyOracleRepository(db)
+    repo.inserir_caixa_receb = MagicMock(return_value=99)
+
+    db.fetchone.return_value = None
+
+    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 270, "SERIAL-B")
 
     assert nr == 99
-    repo.confirmar_caixa_receb_stone.assert_called_once_with(88, "2026-08-23")
-    repo.inserir_caixa_receb.assert_called_once_with(50, "2026-08-23", 930)
+    repo.inserir_caixa_receb.assert_called_once_with(50, "2026-08-23", 270)
 
 
-def test_ensure_reusa_mesmo_serial_e_fecha_orfaos():
+def test_ensure_dois_seriais_mesmo_saldo_reusam_mesmo():
     db = MagicMock()
     repo = TasyOracleRepository(db)
-    repo.confirmar_caixa_receb_stone = MagicMock(return_value=0.0)
     repo.inserir_caixa_receb = MagicMock(return_value=99)
-
-    db.fetchone.return_value = (88,)  # aberto do serial A
-    db.fetchall.return_value = [(77, "2026-08-23"), (88, "2026-08-23")]
-
-    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 930, "SERIAL-A")
-
-    assert nr == 88
-    repo.confirmar_caixa_receb_stone.assert_called_once_with(77, "2026-08-23")
-    repo.inserir_caixa_receb.assert_not_called()
-
-
-def test_ensure_mesmo_serial_sem_orfaos_nao_fecha():
-    db = MagicMock()
-    repo = TasyOracleRepository(db)
-    repo.confirmar_caixa_receb_stone = MagicMock(return_value=0.0)
-
     db.fetchone.return_value = (88,)
-    db.fetchall.return_value = [(88, "2026-08-23")]
 
-    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 930, "SERIAL-A")
+    a = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 270, "SERIAL-A")
+    b = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 270, "SERIAL-B")
 
-    assert nr == 88
-    repo.confirmar_caixa_receb_stone.assert_not_called()
+    assert a == 88
+    assert b == 88
+    repo.inserir_caixa_receb.assert_not_called()

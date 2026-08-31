@@ -24,10 +24,9 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case: Caixa -> Dia -> Recebimento (1 por maquininha/serial no caixa+dia) ->
-    Cartao (N) -> Documento agregado (soma). Tasy so permite 1 lote aberto por caixa:
-    ao trocar de serial, FECHAR o anterior antes de abrir o proximo; o ultimo
-    recebimento fecha quando a fila de cartao esvazia (fim do lote).
+    Use case: Caixa -> Dia -> Recebimento (1 por caixa/dia) ->
+    Cartao/PIX (N) -> Documento agregado (soma). Todas as maquininhas do caixa
+    no mesmo caixa_receb. FECHAR quando as filas esvaziam (fim do lote).
     Sem maquininha/caixa: so movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """
@@ -144,7 +143,7 @@ class IntegrarTransacaoCartao:
             )
 
             nr_seq_saldo = self.tasy.ensure_caixa_saldo_diario(cd_caixa, dt_str)
-            # 1 recebimento aberto por maquininha (serial) no caixa+dia; N cartões nele
+            # 1 recebimento aberto por caixa+dia; N cartoes/PIX (todas maquininhas)
             ensure_receb = getattr(self.tasy, "ensure_caixa_receb_aberto", None)
             if ensure_receb is not None:
                 nr_seq_receb = ensure_receb(
@@ -159,7 +158,7 @@ class IntegrarTransacaoCartao:
                 )
             nr_seq_movto = self._inserir_movto(tx, nr_seq_receb, dt_saldo, sem_tesouraria=False)
 
-            # 1 documento = soma dos cartões do recebimento (sem FECHAR automático)
+            # 1 documento = soma dos cartoes do recebimento
             upsert_doc = getattr(self.tasy, "upsert_documento_agregado", None)
             if upsert_doc is not None:
                 vl_doc = upsert_doc(

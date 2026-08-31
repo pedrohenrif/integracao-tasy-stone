@@ -169,32 +169,12 @@ class TasyOracleRepository:
         nr_serie_maquininha: str | None = None,
     ) -> int:
         """
-        Reusa recebimento Stone aberto do saldo+serial; cria se não houver.
+        Reusa o unico recebimento Stone aberto do saldo (caixa+dia); cria se nao houver.
 
-        Tasy só permite 1 lote aberto por caixa: antes de abrir outro serial,
-        confirma (FECHAR) qualquer recebimento Stone ainda aberto neste saldo.
+        1 caixa_receb por caixa/dia: todas as maquininhas (cartao/PIX) no mesmo recebimento.
+        nr_serie_maquininha e ignorado no agrupamento (mantido na assinatura por compat).
         """
-        serial = (nr_serie_maquininha or "").strip()
-        if serial:
-            row = self.db.fetchone(
-                ora.SELECT_CAIXA_RECEB_ABERTO_STONE_POR_SERIAL,
-                {
-                    "nr_seq_saldo_caixa": nr_seq_saldo,
-                    "nr_serie_maquininha": serial,
-                },
-            )
-            if row:
-                nr = int(row[0])
-                # Garante invariante: no máximo 1 aberto (fecha órfãos/outros seriais)
-                self._fechar_outros_abertos_do_saldo(
-                    nr_seq_saldo, dt, exceto_nr_seq_caixa_rec=nr
-                )
-                return nr
-            self._fechar_outros_abertos_do_saldo(
-                nr_seq_saldo, dt, exceto_nr_seq_caixa_rec=None
-            )
-            return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)
-
+        _ = nr_serie_maquininha
         row = self.db.fetchone(
             ora.SELECT_CAIXA_RECEB_ABERTO_STONE,
             {"nr_seq_saldo_caixa": nr_seq_saldo},
@@ -202,31 +182,6 @@ class TasyOracleRepository:
         if row:
             return int(row[0])
         return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)
-
-    def _fechar_outros_abertos_do_saldo(
-        self,
-        nr_seq_saldo: int,
-        dt: str,
-        *,
-        exceto_nr_seq_caixa_rec: int | None,
-    ) -> None:
-        """FECHAR recebimentos Stone abertos do saldo, exceto o informado."""
-        rows = self.db.fetchall(
-            ora.SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_SALDO,
-            {"nr_seq_saldo_caixa": nr_seq_saldo},
-        )
-        for row in rows:
-            nr = int(row[0])
-            if exceto_nr_seq_caixa_rec is not None and nr == int(exceto_nr_seq_caixa_rec):
-                continue
-            dt_rec = str(row[1] or dt)[:10]
-            logger.info(
-                "FECHAR antes de outro serial | saldo=%s | caixa_receb=%s | dt=%s",
-                nr_seq_saldo,
-                nr,
-                dt_rec,
-            )
-            self.confirmar_caixa_receb_stone(nr, dt_rec)
 
     def listar_caixa_receb_abertos_stone(
         self,
@@ -236,7 +191,7 @@ class TasyOracleRepository:
     ) -> list[dict[str, Any]]:
         """
         Recebimentos Stone com dt_fechamento IS NULL no dia informado.
-        Usado na confirmação diferida (1 FECHAR por caixa_receb unificado).
+        Usado na confirmacao (1 FECHAR por caixa_receb unificado).
         """
         rows = self.db.fetchall(
             ora.SELECT_CAIXA_RECEB_ABERTOS_STONE_POR_DATA,
@@ -320,8 +275,8 @@ class TasyOracleRepository:
         self, nr_seq_caixa_rec: int, dt_recebimento: str
     ) -> float:
         """
-        Upsert doc agregado + FECHAR deste recebimento (1 maquininha).
-        No-op se já estiver fechado (ex.: FECHAR na troca + quiet period depois).
+        Upsert doc agregado + FECHAR deste recebimento (1 por caixa/dia).
+        No-op se ja estiver fechado.
         """
         nr = int(nr_seq_caixa_rec)
         dt = str(dt_recebimento)[:10]
