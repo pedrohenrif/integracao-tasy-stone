@@ -134,7 +134,7 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
                 confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
                 if confirmar is not None:
                     schedule_fechar_apos_lote(
-                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
+                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_receb),
                         dt_recebimento=dt_str,
                         confirmar_fn=confirmar,
                         serial=evento.transaction.nr_serie_maquininha,
@@ -202,7 +202,7 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
                 confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
                 if confirmar is not None:
                     schedule_fechar_apos_lote(
-                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_rec),
+                        nr_seq_caixa_rec=int(resultado.nr_seq_caixa_receb),
                         dt_recebimento=dt_str,
                         confirmar_fn=confirmar,
                         serial=evento.transaction.nr_serie_maquininha,
