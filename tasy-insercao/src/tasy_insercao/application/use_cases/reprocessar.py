@@ -23,8 +23,10 @@ from tasy_insercao.infrastructure.messaging.rabbit import (
     declare_topology,
 )
 from tasy_insercao.infrastructure.persistence.debug_queries import (
+    FiltrosPainel,
     atualizar_registro_reprocesso,
     atualizar_status_registro,
+    listar_registros,
     listar_registros_por_ids,
 )
 
@@ -285,9 +287,12 @@ async def reprocessar_dia(
     user: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Chama stone-extracao com lote PIX-first:
-    1) POST /pix/conciliation/request?date=YYYY-MM-DD
-    2) Cartão é disparado pelo webhook PIX (mesmo arquivo vazio) no stone-extracao.
+    Reintegração manual (portal):
+    1) Solicita PIX na Stone (webhook pode completar depois)
+    2) Força cartão imediatamente (force=true — não espera webhook)
+    3) Reenfileira pendentes do staging daquele dia (status != 5)
+
+    O cron diário continua PIX-first via webhook; isto é só o botão Executar dia.
     """
     ymd = data_ref.strftime("%Y%m%d")
     iso = data_ref.strftime("%Y-%m-%d")
@@ -298,70 +303,88 @@ async def reprocessar_dia(
 
     pix_body: dict[str, Any] = {}
     pix_error: str | None = None
+    cartao_body: dict[str, Any] = {}
+    cartao_error: str | None = None
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        logger.info(
-            "reprocessar_dia | PIX request (lote) | date=%s | url=%s",
-            iso,
-            url_pix,
-        )
+        logger.info("reprocessar_dia | PIX request | date=%s", iso)
         try:
             resp_pix = await client.post(url_pix, params={"date": iso})
+            if resp_pix.status_code >= 400:
+                detail_pix = resp_pix.text[:800]
+                try:
+                    detail_pix = str(resp_pix.json().get("detail") or detail_pix)
+                except Exception:
+                    pass
+                pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
+                logger.error("reprocessar_dia | PIX falhou | %s", pix_error[:400])
+            else:
+                pix_body = resp_pix.json()
+                logger.info(
+                    "reprocessar_dia | PIX ok | status=%s",
+                    pix_body.get("status"),
+                )
         except httpx.RequestError as exc:
             raise RuntimeError(
                 f"stone-extracao inacessível em {base}: {exc}. "
                 "Verifique se o serviço está no ar (:8000)."
             ) from exc
 
-        if resp_pix.status_code >= 400:
-            detail_pix = resp_pix.text[:800]
-            try:
-                err_pix = resp_pix.json()
-                detail_pix = str(err_pix.get("detail") or detail_pix)
-            except Exception:
-                pass
-            pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
-            logger.error(
-                "reprocessar_dia | PIX falhou | date=%s | http=%s | detail=%s",
-                iso,
-                resp_pix.status_code,
-                detail_pix[:400],
+        # Cartão na hora (reprocesso não pode depender do webhook da Stone)
+        logger.info("reprocessar_dia | cartão force | date=%s", ymd)
+        try:
+            resp_cartao = await client.post(
+                url_cartao,
+                params={"date": ymd, "force": "true"},
             )
-            registrar_acao_log(
-                user_id=user_id,
-                login=login,
-                acao="reprocessar_dia_erro",
-                id_stone=None,
-                antes=None,
-                depois={
-                    "reference_date": ymd,
-                    "http_status": resp_pix.status_code,
-                    "detail": detail_pix[:500],
-                    "flow": "pix_first",
-                },
-                obs=f"Erro Stone/extração PIX {iso}: {detail_pix[:300]}",
-            )
-            raise RuntimeError(f"stone-extracao PIX HTTP {resp_pix.status_code}: {detail_pix}") from None
+            if resp_cartao.status_code >= 400:
+                detail = resp_cartao.text[:800]
+                try:
+                    detail = str(resp_cartao.json().get("detail") or detail)
+                except Exception:
+                    pass
+                cartao_error = f"HTTP {resp_cartao.status_code}: {detail}"
+                logger.error("reprocessar_dia | cartão falhou | %s", cartao_error[:400])
+            else:
+                cartao_body = resp_cartao.json()
+                logger.info(
+                    "reprocessar_dia | cartão ok | published=%s",
+                    cartao_body.get("published_count"),
+                )
+        except httpx.RequestError as exc:
+            cartao_error = f"stone-extracao cartão inacessível: {exc}"
+            logger.exception("reprocessar_dia | cartão request error")
 
-        pix_body = resp_pix.json()
-        logger.info(
-            "reprocessar_dia | PIX ok | date=%s | status=%s | msg=%s",
-            iso,
-            pix_body.get("status"),
-            str(pix_body.get("message") or "")[:200],
+    if cartao_error and not cartao_body:
+        registrar_acao_log(
+            user_id=user_id,
+            login=login,
+            acao="reprocessar_dia_erro",
+            id_stone=None,
+            antes=None,
+            depois={
+                "reference_date": ymd,
+                "pix_error": pix_error,
+                "cartao_error": cartao_error,
+            },
+            obs=f"Erro cartão {ymd}: {cartao_error[:300]}",
         )
+        raise RuntimeError(f"stone-extracao cartão falhou: {cartao_error}") from None
 
-    pix_status = pix_body.get("status")
-    pix_msg = pix_body.get("message")
-    published_from_body = int(pix_body.get("published_from_body") or 0)
+    # Reenfileira o que já está pendente no Postgres (ex.: pós-purge)
+    reenq = await _reenfileirar_pendentes_do_dia(data_ref, user=user)
+
+    pix_status = pix_body.get("status") if pix_body else None
+    pix_msg = pix_body.get("message") if pix_body else pix_error
+    published = cartao_body.get("published_count")
+    parsed = cartao_body.get("parsed_count")
 
     obs = (
-        f"Republicação {ymd} | PIX-first status={pix_status} | "
-        f"published_from_body={published_from_body} | "
-        "cartão via webhook"
+        f"Republicação {ymd} | cartão published={published} | "
+        f"PIX status={pix_status} | reenq={reenq.get('enfileirados', 0)}"
     )
-    if pix_msg:
-        obs = f"{obs} | {pix_msg}"
+    if pix_error:
+        obs = f"{obs} | PIX erro={pix_error[:80]}"
     registrar_acao_log(
         user_id=user_id,
         login=login,
@@ -370,54 +393,95 @@ async def reprocessar_dia(
         antes=None,
         depois={
             "reference_date": ymd,
-            "flow": "pix_first",
-            "pix_reference_date": iso,
+            "flow": "reprocess_force_cartao",
+            "parsed_count": parsed,
+            "published_count": published,
             "pix_status": pix_status,
-            "pix_message": pix_msg,
-            "pix_published_from_body": published_from_body,
-            "cartao": "aguardando_webhook",
+            "pix_error": pix_error,
+            "reenfileirados": reenq.get("enfileirados"),
         },
         obs=obs[:500],
     )
 
     mensagem = (
-        f"PIX solicitado para {iso}. Cartão do mesmo dia será publicado quando "
-        "o webhook PIX chegar (arquivo vazio também libera o lote)."
+        f"Dia {iso}: cartão publicados={published}. "
+        f"Staging reenfileirado={reenq.get('enfileirados', 0)}. "
+        f"PIX solicitado (webhook pode completar depois)."
     )
-    if published_from_body > 0 or pix_status in {"published_from_body", "ok"}:
-        mensagem = (
-            f"{mensagem} PIX published_from_body={published_from_body}."
-        )
     if pix_error:
-        mensagem = f"{mensagem} PIX: falha — {pix_error}"
+        mensagem = f"{mensagem} PIX: {pix_error}"
     elif pix_msg:
         mensagem = f"{mensagem} PIX: {pix_msg}"
 
     return {
-        "reference_date": ymd,
-        "parsed_count": None,
-        "published_count": None,
-        "queue": None,
-        "source": None,
-        "mode": "pix_first",
-        "raw_bytes": None,
-        "stone_message": None,
-        "parse_stats": {},
-        "xml_backup_path": None,
-        "totais_avisos": [],
-        "stone_extracao_url": url_pix,
+        "reference_date": cartao_body.get("reference_date", ymd),
+        "parsed_count": parsed,
+        "published_count": published,
+        "queue": cartao_body.get("queue"),
+        "source": cartao_body.get("source"),
+        "mode": "reprocess_force_cartao",
+        "raw_bytes": cartao_body.get("raw_bytes"),
+        "stone_message": cartao_body.get("message"),
+        "parse_stats": cartao_body.get("parse_stats") or {},
+        "xml_backup_path": cartao_body.get("xml_backup_path"),
+        "totais_avisos": cartao_body.get("totais_avisos") or [],
+        "stone_extracao_url": url_cartao,
         "mensagem": mensagem,
         "pix": {
             "reference_date": iso,
             "status": pix_status,
-            "message": pix_msg,
-            "source": pix_body.get("source"),
-            "published_from_body": published_from_body,
+            "message": pix_msg if not pix_error else None,
+            "source": pix_body.get("source") if pix_body else None,
+            "published_from_body": pix_body.get("published_from_body") if pix_body else 0,
             "error": pix_error,
         },
         "cartao": {
-            "status": "aguardando_webhook",
-            "conciliation_url": url_cartao,
-            "hint": "Disparado automaticamente após webhook PIX (ou force=true / cron fallback).",
+            "status": "published" if not cartao_error else "error",
+            "published_count": published,
+            "error": cartao_error,
         },
+        "reenfileirados": reenq,
     }
+
+
+async def _reenfileirar_pendentes_do_dia(
+    data_ref: date,
+    *,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Reenfileira registros do dia que não estão integrados (status 5)."""
+    rows = listar_registros(
+        FiltrosPainel(
+            data_de=data_ref,
+            data_ate=data_ref,
+            limit=2000,
+            offset=0,
+        )
+    )
+    nrs = [
+        int(r["nr_sequencia"])
+        for r in rows
+        if int(r.get("cd_status") or 0) != StatusIntegracao.INTEGRADO.value
+    ]
+    if not nrs:
+        return {"enfileirados": 0, "ids_stone": [], "ignorados": [], "erros": []}
+
+    total: dict[str, Any] = {
+        "enfileirados": 0,
+        "ids_stone": [],
+        "ignorados": [],
+        "erros": [],
+    }
+    for i in range(0, len(nrs), 200):
+        chunk = await reprocessar_selecionados(nrs[i : i + 200], user=user)
+        total["enfileirados"] += int(chunk.get("enfileirados") or 0)
+        total["ids_stone"].extend(chunk.get("ids_stone") or [])
+        total["ignorados"].extend(chunk.get("ignorados") or [])
+        total["erros"].extend(chunk.get("erros") or [])
+    logger.info(
+        "reprocessar_dia | reenq pendentes | date=%s | enfileirados=%s | erros=%s",
+        data_ref.isoformat(),
+        total["enfileirados"],
+        len(total["erros"]),
+    )
+    return total
