@@ -285,33 +285,48 @@ async def reprocessar_dia(
     user: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Chama stone-extracao:
-    1) POST /cartao/conciliation?date=YYYYMMDD
-    2) POST /pix/conciliation/request?date=YYYY-MM-DD
+    Chama stone-extracao com lote PIX-first:
+    1) POST /pix/conciliation/request?date=YYYY-MM-DD
+    2) Cartão é disparado pelo webhook PIX (mesmo arquivo vazio) no stone-extracao.
     """
     ymd = data_ref.strftime("%Y%m%d")
     iso = data_ref.strftime("%Y-%m-%d")
     base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
-    url_cartao = f"{base}/cartao/conciliation"
     url_pix = f"{base}/pix/conciliation/request"
+    url_cartao = f"{base}/cartao/conciliation"
     user_id, login = _user_meta(user)
 
+    pix_body: dict[str, Any] = {}
+    pix_error: str | None = None
+
     async with httpx.AsyncClient(timeout=180.0) as client:
+        logger.info(
+            "reprocessar_dia | PIX request (lote) | date=%s | url=%s",
+            iso,
+            url_pix,
+        )
         try:
-            resp = await client.post(url_cartao, params={"date": ymd})
+            resp_pix = await client.post(url_pix, params={"date": iso})
         except httpx.RequestError as exc:
             raise RuntimeError(
                 f"stone-extracao inacessível em {base}: {exc}. "
                 "Verifique se o serviço está no ar (:8000)."
             ) from exc
 
-        if resp.status_code >= 400:
-            detail = resp.text[:800]
+        if resp_pix.status_code >= 400:
+            detail_pix = resp_pix.text[:800]
             try:
-                err_json = resp.json()
-                detail = str(err_json.get("detail") or detail)
+                err_pix = resp_pix.json()
+                detail_pix = str(err_pix.get("detail") or detail_pix)
             except Exception:
                 pass
+            pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
+            logger.error(
+                "reprocessar_dia | PIX falhou | date=%s | http=%s | detail=%s",
+                iso,
+                resp_pix.status_code,
+                detail_pix[:400],
+            )
             registrar_acao_log(
                 user_id=user_id,
                 login=login,
@@ -320,63 +335,33 @@ async def reprocessar_dia(
                 antes=None,
                 depois={
                     "reference_date": ymd,
-                    "http_status": resp.status_code,
-                    "detail": detail[:500],
+                    "http_status": resp_pix.status_code,
+                    "detail": detail_pix[:500],
+                    "flow": "pix_first",
                 },
-                obs=f"Erro Stone/extração cartão {ymd}: {detail[:300]}",
+                obs=f"Erro Stone/extração PIX {iso}: {detail_pix[:300]}",
             )
-            raise RuntimeError(f"stone-extracao HTTP {resp.status_code}: {detail}") from None
+            raise RuntimeError(f"stone-extracao PIX HTTP {resp_pix.status_code}: {detail_pix}") from None
 
-        body = resp.json()
-
-        pix_body: dict[str, Any] = {}
-        pix_error: str | None = None
+        pix_body = resp_pix.json()
         logger.info(
-            "reprocessar_dia | PIX request | date=%s | url=%s",
+            "reprocessar_dia | PIX ok | date=%s | status=%s | msg=%s",
             iso,
-            url_pix,
+            pix_body.get("status"),
+            str(pix_body.get("message") or "")[:200],
         )
-        try:
-            resp_pix = await client.post(url_pix, params={"date": iso})
-            if resp_pix.status_code >= 400:
-                detail_pix = resp_pix.text[:800]
-                try:
-                    err_pix = resp_pix.json()
-                    detail_pix = str(err_pix.get("detail") or detail_pix)
-                except Exception:
-                    pass
-                pix_error = f"HTTP {resp_pix.status_code}: {detail_pix}"
-                logger.error(
-                    "reprocessar_dia | PIX falhou | date=%s | http=%s | detail=%s",
-                    iso,
-                    resp_pix.status_code,
-                    detail_pix[:400],
-                )
-            else:
-                pix_body = resp_pix.json()
-                logger.info(
-                    "reprocessar_dia | PIX ok | date=%s | status=%s | msg=%s",
-                    iso,
-                    pix_body.get("status"),
-                    str(pix_body.get("message") or "")[:200],
-                )
-        except httpx.RequestError as exc:
-            pix_error = f"stone-extracao PIX inacessível: {exc}"
-            logger.exception("reprocessar_dia | PIX request error | date=%s", iso)
 
-    parsed = body.get("parsed_count")
-    published = body.get("published_count")
-    stone_msg = body.get("message")
-    pix_status = pix_body.get("status") if pix_body else None
-    pix_msg = pix_body.get("message") if pix_body else pix_error
+    pix_status = pix_body.get("status")
+    pix_msg = pix_body.get("message")
+    published_from_body = int(pix_body.get("published_from_body") or 0)
 
-    obs = f"Republicação {ymd} | cartão published={published}"
-    if pix_error:
-        obs = f"{obs} | PIX erro={pix_error[:120]}"
-    elif pix_status:
-        obs = f"{obs} | PIX status={pix_status}"
-    if stone_msg:
-        obs = f"{obs} | {stone_msg}"
+    obs = (
+        f"Republicação {ymd} | PIX-first status={pix_status} | "
+        f"published_from_body={published_from_body} | "
+        "cartão via webhook"
+    )
+    if pix_msg:
+        obs = f"{obs} | {pix_msg}"
     registrar_acao_log(
         user_id=user_id,
         login=login,
@@ -385,24 +370,23 @@ async def reprocessar_dia(
         antes=None,
         depois={
             "reference_date": ymd,
-            "parsed_count": parsed,
-            "published_count": published,
-            "raw_bytes": body.get("raw_bytes"),
-            "message": stone_msg,
-            "parse_stats": body.get("parse_stats"),
+            "flow": "pix_first",
             "pix_reference_date": iso,
             "pix_status": pix_status,
             "pix_message": pix_msg,
-            "pix_error": pix_error,
+            "pix_published_from_body": published_from_body,
+            "cartao": "aguardando_webhook",
         },
         obs=obs[:500],
     )
-    if published == 0 and stone_msg:
-        mensagem = stone_msg
-    else:
+
+    mensagem = (
+        f"PIX solicitado para {iso}. Cartão do mesmo dia será publicado quando "
+        "o webhook PIX chegar (arquivo vazio também libera o lote)."
+    )
+    if published_from_body > 0 or pix_status in {"published_from_body", "ok"}:
         mensagem = (
-            "Dia republicado na fila (cartão). Registros já integrados (status 5) "
-            "são ignorados pelo consumer."
+            f"{mensagem} PIX published_from_body={published_from_body}."
         )
     if pix_error:
         mensagem = f"{mensagem} PIX: falha — {pix_error}"
@@ -410,25 +394,30 @@ async def reprocessar_dia(
         mensagem = f"{mensagem} PIX: {pix_msg}"
 
     return {
-        "reference_date": body.get("reference_date", ymd),
-        "parsed_count": parsed,
-        "published_count": published,
-        "queue": body.get("queue"),
-        "source": body.get("source"),
-        "mode": body.get("mode"),
-        "raw_bytes": body.get("raw_bytes"),
-        "stone_message": stone_msg,
-        "parse_stats": body.get("parse_stats") or {},
-        "xml_backup_path": body.get("xml_backup_path"),
-        "totais_avisos": body.get("totais_avisos") or [],
-        "stone_extracao_url": url_cartao,
+        "reference_date": ymd,
+        "parsed_count": None,
+        "published_count": None,
+        "queue": None,
+        "source": None,
+        "mode": "pix_first",
+        "raw_bytes": None,
+        "stone_message": None,
+        "parse_stats": {},
+        "xml_backup_path": None,
+        "totais_avisos": [],
+        "stone_extracao_url": url_pix,
         "mensagem": mensagem,
         "pix": {
             "reference_date": iso,
             "status": pix_status,
-            "message": pix_body.get("message") if pix_body else None,
-            "source": pix_body.get("source") if pix_body else None,
-            "published_from_body": pix_body.get("published_from_body") if pix_body else 0,
+            "message": pix_msg,
+            "source": pix_body.get("source"),
+            "published_from_body": published_from_body,
             "error": pix_error,
+        },
+        "cartao": {
+            "status": "aguardando_webhook",
+            "conciliation_url": url_cartao,
+            "hint": "Disparado automaticamente após webhook PIX (ou force=true / cron fallback).",
         },
     }

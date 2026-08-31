@@ -26,7 +26,7 @@ class IntegrarTransacaoCartao:
     """
     Use case: Caixa -> Dia -> Recebimento (1 por caixa/dia) ->
     Cartao/PIX (N) -> Documento agregado (soma). Todas as maquininhas do caixa
-    no mesmo caixa_receb. FECHAR quando as filas esvaziam (fim do lote).
+    no mesmo caixa_receb. FECHAR apos quiet period sem novo cartao/PIX nesse recebimento.
     Sem maquininha/caixa: so movto_cartao (status Sem Tesouraria).
     Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
     """

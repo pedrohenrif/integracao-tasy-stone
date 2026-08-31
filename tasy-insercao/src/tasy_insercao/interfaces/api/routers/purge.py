@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from tasy_insercao.application.use_cases.purge_recebimentos_stone import (
+    MAX_BATCH,
     PurgeRequest,
     confirm_purge,
     preview_purge,
@@ -17,13 +18,17 @@ router = APIRouter(prefix="/api/purge", tags=["purge"])
 
 class PurgeBody(BaseModel):
     nm_usuario: str = "stone"
-    nr_sequencias: list[int] = Field(default_factory=list, max_length=100)
-    id_stones: list[str] = Field(default_factory=list, max_length=100)
+    nr_sequencias: list[int] = Field(default_factory=list, max_length=MAX_BATCH)
+    id_stones: list[str] = Field(default_factory=list, max_length=MAX_BATCH)
     cd_caixa: int | None = None
     data_de: date | None = None
     data_ate: date | None = None
     id_stone: str | None = None
     allow_fechado: bool = False
+    require_nm_usuario: bool = False
+    reset_staging_sem_oracle: bool = False
+    limit: int = Field(default=MAX_BATCH, ge=1, le=MAX_BATCH)
+    offset: int = Field(default=0, ge=0)
 
 
 class PurgeConfirmBody(PurgeBody):
@@ -41,6 +46,10 @@ def _to_req(body: PurgeBody) -> PurgeRequest:
         data_ate=body.data_ate,
         id_stone=body.id_stone,
         allow_fechado=body.allow_fechado,
+        require_nm_usuario=body.require_nm_usuario,
+        reset_staging_sem_oracle=body.reset_staging_sem_oracle,
+        limit=body.limit,
+        offset=body.offset,
     )
 
 

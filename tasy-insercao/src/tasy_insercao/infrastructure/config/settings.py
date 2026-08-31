@@ -56,9 +56,10 @@ class Settings(BaseSettings):
     # Token interno para stone-extracao gravar eventos de scheduler na auditoria
     PORTAL_INTERNAL_TOKEN: str = ""
 
-    # Fecha o *ultimo* recebimento quando a fila de cartao esvazia (sem espera fixa).
-    # Troca de serial ja FECHA na hora no ensure.
-    FECHAR_ULTIMO_RECEB_ENABLED: bool = True
+    # FECHAR o recebimento unificado (1 por caixa) apos quiet period sem novo cartao/PIX.
+    # Cada insert remarca o timer — so confirma depois que o lote (cartao+PIX) assentou.
+    FECHAR_APOS_LOTE_ENABLED: bool = True
+    FECHAR_APOS_LOTE_SECONDS: int = 300  # 5 min apos o ultimo insert nesse recebimento
 
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"

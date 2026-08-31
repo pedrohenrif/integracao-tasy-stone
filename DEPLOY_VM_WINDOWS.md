@@ -174,11 +174,11 @@ Proxy público (se usado):
 
 | Fluxo | Horário (.env) | Painel | O que faz |
 |-------|----------------|--------|-----------|
-| Cartão | `CARTAO_CRON_*` + `CARTAO_CRON_RETRY_*` | Scheduler → Cartão | Extrai XML D-1 → fila (padrão 01:00 e 04:00) |
-| PIX | `PIX_CRON_*` + `PIX_CRON_RETRY_*` | Scheduler → PIX | Solicita extrato D-1 → webhook (padrão 01:05 e 04:05) |
+| PIX | `PIX_CRON_*` (~04:05) | Scheduler → PIX | Solicita extrato D-1 → webhook (mesmo vazio) |
+| Cartão | `CARTAO_CRON_*` (~05:30) | Scheduler → Cartão | **Fallback**: só se o webhook PIX não disparou cartão (`LOTE_AGUARDA_PIX_WEBHOOK=true`) |
 
-Jobs usam `misfire_grace_time` de 2h: se o serviço estiver reiniciando no minuto exato, ainda tentam rodar.  
-Diagnóstico PIX/dashboard: `stone-extracao.err.log` — buscar `PIX request` / `SolicitarExtratoPix` / `Webhook PIX` / `reprocessar_dia | PIX`.
+Com `LOTE_AGUARDA_PIX_WEBHOOK=true` (padrão): ordem do lote = solicitar PIX → webhook → publicar PIX + disparar cartão → consumer unifica recebimento → FECHAR após quiet period.  
+Diagnóstico: `stone-extracao.err.log` — `Lote dia` / `aguardando webhook` / `disparando cartão` / `Webhook PIX` / `reprocessar_dia | PIX`.
 
 Após alterar código do cron: `Restart-Service StoneExtracao` (e `TasyPainel` / `StonePortal` se mudou o painel).
 

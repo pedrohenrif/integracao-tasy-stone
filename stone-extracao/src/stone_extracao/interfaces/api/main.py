@@ -56,7 +56,7 @@ async def executar_extracao_cartao(
     publisher: RabbitPublisher,
     reference_date: str,
 ) -> ExtracaoResultado:
-    """Caminho único: API manual, D-1 e cron diário."""
+    """Caminho único: API manual, D-1, webhook PIX e cron fallback."""
     use_case = ExtrairConciliacaoCartao(
         stone_client=StoneConciliationClient(),
         parser=CartaoXmlParser(),
@@ -77,6 +77,8 @@ async def executar_solicitacao_pix(
     reference_date: str,
 ) -> SolicitarPixResultado:
     """Caminho único: API manual, D-1 e cron diário PIX (request → webhook)."""
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
     logger.info(
         "PIX pipeline | solicitação | date=%s | merchant=%s",
         reference_date,
@@ -95,7 +97,179 @@ async def executar_solicitacao_pix(
         result.published_from_body,
         (result.message or "")[:200],
     )
+    # Marca espera do webhook; sample sync não tem webhook — libera cartão já.
+    try:
+        lote.marcar_aguardando_webhook(result.reference_date)
+        if settings.STONE_USE_SAMPLE:
+            lote.marcar_webhook_recebido(
+                result.reference_date,
+                pix_published=int(result.published_from_body or 0),
+            )
+            await _disparar_cartao_apos_pix(
+                publisher,
+                result.reference_date,
+                origem="pix_sample_body",
+            )
+    except Exception:
+        logger.exception(
+            "PIX pipeline | falha ao registrar lote/gate | date=%s",
+            result.reference_date,
+        )
     return result
+
+
+async def _disparar_cartao_apos_pix(
+    publisher: RabbitPublisher,
+    reference_date_iso: str,
+    *,
+    origem: str,
+) -> ExtracaoResultado | None:
+    """Publica cartão do mesmo dia após PIX (webhook ou sample)."""
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
+    if not settings.LOTE_AGUARDA_PIX_WEBHOOK:
+        return None
+    iso = (reference_date_iso or "").strip()
+    if len(iso) == 8 and iso.isdigit():
+        iso = lote.ymd_to_iso(iso)
+    else:
+        iso = iso[:10]
+    if not iso or len(iso) < 10:
+        logger.warning(
+            "Lote dia | sem reference_date para disparar cartão | origem=%s",
+            origem,
+        )
+        return None
+    if not lote.reservar_disparo_cartao(iso):
+        return None
+    ymd = lote.iso_to_ymd(iso)
+    logger.info(
+        "Lote dia | disparando cartão após PIX | origem=%s | date=%s | ymd=%s",
+        origem,
+        iso,
+        ymd,
+    )
+    try:
+        result = await executar_extracao_cartao(publisher, ymd)
+        lote.registrar_cartao_publicado(iso, result.published_count)
+        logger.info(
+            "Lote dia | cartão ok após PIX | date=%s | published=%s",
+            iso,
+            result.published_count,
+        )
+        return result
+    except Exception:
+        logger.exception("Lote dia | cartão falhou após PIX | date=%s", iso)
+        lote.liberar_disparo_cartao(iso)
+        raise
+
+
+def _skipped_cartao(ymd: str, source: str, message: str) -> ExtracaoResultado:
+    return ExtracaoResultado(
+        reference_date=ymd,
+        source=source,
+        parsed_count=0,
+        published_count=0,
+        sample_ids=[],
+        transactions=[],
+        message=message,
+    )
+
+
+async def executar_extracao_cartao_com_gate(
+    publisher: RabbitPublisher,
+    reference_date: str,
+    *,
+    force: bool = False,
+    origem: str = "api",
+) -> ExtracaoResultado:
+    """
+    Extrai cartão. Com LOTE_AGUARDA_PIX_WEBHOOK e force=False:
+    - cron_fallback: só se o webhook ainda não disparou cartão
+    - api: exige webhook PIX do dia (ou force=true)
+    """
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
+    ymd = lote.iso_to_ymd(reference_date) if "-" in reference_date else reference_date
+    iso = lote.ymd_to_iso(ymd)
+
+    if force or not settings.LOTE_AGUARDA_PIX_WEBHOOK:
+        result = await executar_extracao_cartao(publisher, ymd)
+        if settings.LOTE_AGUARDA_PIX_WEBHOOK:
+            lote.registrar_cartao_publicado(iso, result.published_count)
+        return result
+
+    if origem == "cron_fallback":
+        if not lote.precisa_fallback_cartao(iso):
+            logger.info("Cartão gate | skip fallback (já disparado) | date=%s", iso)
+            return _skipped_cartao(
+                ymd,
+                "skipped_already_triggered",
+                "Cartão já publicado após webhook PIX",
+            )
+        if not lote.reservar_disparo_cartao(iso):
+            return _skipped_cartao(ymd, "skipped_race", "Cartão já em disparo")
+        try:
+            result = await executar_extracao_cartao(publisher, ymd)
+            lote.registrar_cartao_publicado(iso, result.published_count)
+            return result
+        except Exception:
+            lote.liberar_disparo_cartao(iso)
+            raise
+
+    st = lote.status_lote(iso)
+    if not st.get("webhook_at"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cartão do dia {iso} aguarda webhook PIX. "
+                "Solicite PIX e espere o webhook, ou use force=true."
+            ),
+        )
+
+    result = await executar_extracao_cartao(publisher, ymd)
+    lote.registrar_cartao_publicado(iso, result.published_count)
+    return result
+
+
+async def _apos_webhook_pix_ok(
+    publisher: RabbitPublisher,
+    *,
+    reference_date: str | None,
+    pix_published: int,
+    event_type: str,
+) -> None:
+    """Marca webhook ok e dispara cartão do mesmo dia (arquivo vazio também conta)."""
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
+    if event_type == "validation_notification":
+        return
+    ref = reference_date
+    if not ref:
+        ref = lote.encontrar_iso_aguardando()
+        if ref:
+            logger.info(
+                "Lote dia | webhook sem ref — usando dia aguardando | date=%s",
+                ref,
+            )
+    if not ref:
+        logger.warning(
+            "Lote dia | webhook PIX sem reference_date | published=%s — cartão não disparado",
+            pix_published,
+        )
+        return
+    try:
+        lote.marcar_webhook_recebido(ref, pix_published=pix_published)
+        await _disparar_cartao_apos_pix(
+            publisher,
+            ref,
+            origem="pix_webhook",
+        )
+    except Exception:
+        logger.exception(
+            "Lote dia | pós-webhook falhou | date=%s (PIX já publicado)",
+            ref,
+        )
 
 
 @asynccontextmanager
@@ -109,7 +283,13 @@ async def lifespan(app: FastAPI):
     app.state.publisher = RabbitPublisher(channel)
 
     async def _cron_cartao(reference_date: str) -> ExtracaoResultado:
-        return await executar_extracao_cartao(app.state.publisher, reference_date)
+        # Com LOTE_AGUARDA_PIX_WEBHOOK: fallback se o webhook não disparou cartão
+        return await executar_extracao_cartao_com_gate(
+            app.state.publisher,
+            reference_date,
+            force=False,
+            origem="cron_fallback",
+        )
 
     async def _cron_pix(reference_date: str) -> SolicitarPixResultado:
         return await executar_solicitacao_pix(app.state.publisher, reference_date)
@@ -232,6 +412,7 @@ async def health(request: Request):
         "env": settings.APP_ENV,
         "stone_token_configured": bool(settings.STONE_API_TOKEN),
         "use_sample": settings.STONE_USE_SAMPLE,
+        "lote_aguarda_pix_webhook": settings.LOTE_AGUARDA_PIX_WEBHOOK,
         "queues": {
             "cartao": settings.RABBITMQ_QUEUE_CARTAO,
             "pix": settings.RABBITMQ_QUEUE_PIX,
@@ -276,11 +457,19 @@ async def post_scheduler_pix(body: SchedulerToggleBody, request: Request):
 async def ingest_cartao(
     request: Request,
     date: str = Query(..., pattern=r"^\d{8}$", description="YYYYMMDD"),
+    force: bool = Query(
+        False,
+        description="true = ignora gate PIX (ops/teste). false = exige webhook PIX do dia.",
+    ),
 ):
     """Extrato Cartão: busca ativa na API Stone e publica 1 msg/tx."""
     publisher = _publisher(request)
     try:
-        result = await executar_extracao_cartao(publisher, date)
+        result = await executar_extracao_cartao_com_gate(
+            publisher, date, force=force, origem="api"
+        )
+    except HTTPException:
+        raise
     except StoneFetchError as exc:
         logger.error("Extração cartão falhou (Stone) | date=%s | %s", date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -291,16 +480,26 @@ async def ingest_cartao(
 
 
 @app.post("/cartao/conciliation/d-1", response_model=ConciliationResponse)
-async def ingest_cartao_d1(request: Request):
+async def ingest_cartao_d1(
+    request: Request,
+    force: bool = Query(
+        False,
+        description="true = ignora gate PIX (ops/teste).",
+    ),
+):
     """
     Rotina de produção (manual): extrai **sempre o dia anterior** (D-1)
     no fuso America/Sao_Paulo e publica todas as transações na fila.
     """
     reference_date = data_ontem(settings.CARTAO_CRON_TZ)
-    logger.info("Extração cartão D-1 (manual) | date=%s", reference_date)
+    logger.info("Extração cartão D-1 (manual) | date=%s | force=%s", reference_date, force)
     publisher = _publisher(request)
     try:
-        result = await executar_extracao_cartao(publisher, reference_date)
+        result = await executar_extracao_cartao_com_gate(
+            publisher, reference_date, force=force, origem="api"
+        )
+    except HTTPException:
+        raise
     except StoneFetchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -366,10 +565,17 @@ async def _process_pix_webhook_body(publisher: RabbitPublisher, body: bytes) -> 
     try:
         result = await use_case.execute(body, source="webhook")
         logger.info(
-            "Webhook PIX processado | type=%s | parsed=%s | published=%s",
+            "Webhook PIX processado | type=%s | parsed=%s | published=%s | ref=%s",
             result.event_type,
             result.parsed_count,
             result.published_count,
+            result.reference_date,
+        )
+        await _apos_webhook_pix_ok(
+            publisher,
+            reference_date=result.reference_date,
+            pix_published=result.published_count,
+            event_type=result.event_type,
         )
     except Exception:
         logger.exception("Webhook PIX | falha no processamento em background")
@@ -474,6 +680,13 @@ async def pix_webhook(
         result = await use_case.execute(body, source="webhook")
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Falha ao processar webhook PIX: {exc}") from exc
+
+    await _apos_webhook_pix_ok(
+        publisher,
+        reference_date=result.reference_date,
+        pix_published=result.published_count,
+        event_type=result.event_type,
+    )
 
     return PixWebhookResponse(
         source=result.source,

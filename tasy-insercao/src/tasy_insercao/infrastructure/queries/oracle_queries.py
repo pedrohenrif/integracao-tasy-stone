@@ -499,7 +499,8 @@ WHERE d.nm_usuario = 'stone'
   )
 """
 
-# --- Purge admin (somente nm_usuario + ID stone; nunca caixa / saldo diário) ---
+# --- Purge admin (chave = ID stone na observação; nunca caixa / saldo diário) ---
+# Preferência: nm_usuario informado. Fallback: só ID stone (FECHAR/Tasy pode alterar nm_usuario).
 
 SELECT_PURGE_TARGET = """
 SELECT
@@ -515,21 +516,52 @@ SELECT
     (
       SELECT COUNT(*)
       FROM movto_trans_financ d
-      WHERE d.nm_usuario = :nm_usuario
-        AND (
-          d.nr_seq_movto_cartao = m.nr_sequencia
-          OR (
+      WHERE d.nr_seq_movto_cartao = m.nr_sequencia
+         OR (
             m.nr_seq_caixa_rec IS NOT NULL
             AND d.nr_seq_caixa_rec = m.nr_seq_caixa_rec
-          )
-        )
-    )
+            AND d.nr_seq_movto_cartao IS NULL
+         )
+    ),
+    m.nm_usuario,
+    cr.nm_usuario,
+    SUBSTR(m.ds_observacao, 1, 200)
 FROM movto_cartao_cr m
 LEFT JOIN caixa_receb cr
   ON cr.nr_sequencia = m.nr_seq_caixa_rec
- AND cr.nm_usuario = :nm_usuario
 WHERE m.nm_usuario = :nm_usuario
-  AND m.ds_observacao LIKE :ds_observacao
+  AND UPPER(m.ds_observacao) LIKE UPPER(:ds_observacao)
+  AND ROWNUM = 1
+"""
+
+SELECT_PURGE_TARGET_BY_ID = """
+SELECT
+    m.nr_sequencia,
+    m.nr_seq_caixa_rec,
+    m.vl_transacao,
+    TO_CHAR(m.dt_transacao, 'YYYY-MM-DD'),
+    CASE
+      WHEN cr.nr_sequencia IS NULL THEN 'N'
+      WHEN cr.dt_fechamento IS NULL THEN 'N'
+      ELSE 'S'
+    END,
+    (
+      SELECT COUNT(*)
+      FROM movto_trans_financ d
+      WHERE d.nr_seq_movto_cartao = m.nr_sequencia
+         OR (
+            m.nr_seq_caixa_rec IS NOT NULL
+            AND d.nr_seq_caixa_rec = m.nr_seq_caixa_rec
+            AND d.nr_seq_movto_cartao IS NULL
+         )
+    ),
+    m.nm_usuario,
+    cr.nm_usuario,
+    SUBSTR(m.ds_observacao, 1, 200)
+FROM movto_cartao_cr m
+LEFT JOIN caixa_receb cr
+  ON cr.nr_sequencia = m.nr_seq_caixa_rec
+WHERE UPPER(m.ds_observacao) LIKE UPPER(:ds_observacao)
   AND ROWNUM = 1
 """
 
@@ -539,23 +571,25 @@ FROM cartao_cr_parcela
 WHERE nr_seq_movto = :nr_seq_movto
 """
 
-# Desvincula doc do movto para permitir apagar cartão antes do documento (FK).
+# Desvincula só o doc ligado a ESTE movto (não mexe em docs agregados do lote).
 UNLINK_PURGE_DOCS_MOVTO = """
 UPDATE movto_trans_financ d
 SET d.nr_seq_movto_cartao = NULL
-WHERE d.nm_usuario = :nm_usuario
-  AND (
-    d.nr_seq_movto_cartao = :nr_seq_movto
-    OR d.nr_seq_caixa_rec = :nr_seq_caixa_rec
-  )
+WHERE d.nr_seq_movto_cartao = :nr_seq_movto
 """
 
-DELETE_PURGE_DOCS = """
+DELETE_PURGE_DOCS_MOVTO = """
 DELETE FROM movto_trans_financ d
-WHERE d.nm_usuario = :nm_usuario
-  AND (
-    d.nr_seq_movto_cartao = :nr_seq_movto
-    OR d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+WHERE d.nr_seq_movto_cartao = :nr_seq_movto
+"""
+
+# Docs agregados do recebimento (nr_seq_movto_cartao NULL) só se não restar movto.
+DELETE_PURGE_DOCS_RECEB_ORFAOS = """
+DELETE FROM movto_trans_financ d
+WHERE d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  AND d.nr_seq_movto_cartao IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM movto_cartao_cr m WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
   )
 """
 
@@ -567,14 +601,12 @@ WHERE nr_seq_movto = :nr_seq_movto
 DELETE_PURGE_MOVTO = """
 DELETE FROM movto_cartao_cr
 WHERE nr_sequencia = :nr_seq_movto
-  AND nm_usuario = :nm_usuario
-  AND ds_observacao LIKE :ds_observacao
+  AND UPPER(ds_observacao) LIKE UPPER(:ds_observacao)
 """
 
 DELETE_PURGE_CAIXA_RECEB = """
 DELETE FROM caixa_receb cr
 WHERE cr.nr_sequencia = :nr_seq_caixa_rec
-  AND cr.nm_usuario = :nm_usuario
   AND NOT EXISTS (
     SELECT 1 FROM movto_cartao_cr m WHERE m.nr_seq_caixa_rec = cr.nr_sequencia
   )

@@ -18,6 +18,8 @@ export function PurgePage() {
   const [idStone, setIdStone] = useState("");
   const [idStonesText, setIdStonesText] = useState("");
   const [allowFechado, setAllowFechado] = useState(false);
+  const [resetStagingSemOracle, setResetStagingSemOracle] = useState(false);
+  const [offset, setOffset] = useState(0);
   const [phrase, setPhrase] = useState("");
   const [preview, setPreview] = useState<PurgePreviewResponse | null>(null);
   const [resultados, setResultados] = useState<PurgeResultItem[] | null>(null);
@@ -38,6 +40,9 @@ export function PurgePage() {
       id_stone: idStone.trim() || null,
       id_stones,
       allow_fechado: allowFechado,
+      reset_staging_sem_oracle: resetStagingSemOracle,
+      offset,
+      limit: 300,
     };
   }
 
@@ -50,8 +55,11 @@ export function PurgePage() {
       const data = await purgePreviewApi(buildBody());
       setPreview(data);
       setPhrase("");
+      const idOnly = data.totais.matched_id_only ?? 0;
       setMsg(
-        `Preview: ${data.totais.elegiveis} elegíveis · ${data.totais.bloqueados} bloqueados · ${data.totais.sem_oracle} sem Oracle`,
+        `Preview: ${data.totais.elegiveis} elegíveis · ${data.totais.bloqueados} bloqueados · ${data.totais.sem_oracle} sem Oracle` +
+          (idOnly ? ` · ${idOnly} achados só por ID stone` : "") +
+          (data.has_more ? ` · há mais (offset atual ${data.offset})` : ""),
       );
     } catch (e) {
       setPreview(null);
@@ -69,6 +77,7 @@ export function PurgePage() {
     setBusy(true);
     setError("");
     setMsg("");
+    const hadMore = Boolean(preview.has_more);
     try {
       const data = await purgeConfirmApi({
         ...buildBody(),
@@ -79,6 +88,10 @@ export function PurgePage() {
       setPreview(null);
       setPhrase("");
       setMsg(`Purge concluído: ${data.ok} ok · ${data.falhas} falhas`);
+      // Status 5 some do filtro: manter offset 0 e repetir preview no mesmo período.
+      if (hadMore) {
+        setOffset(0);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao confirmar");
     } finally {
@@ -91,21 +104,21 @@ export function PurgePage() {
       <header className="page-head">
         <h1>Purge Stone (admin)</h1>
         <p className="muted">
-          Remove no Tasy apenas recebimentos/cartões/documentos criados pela integração (usuário + ID
-          stone). Caixa e saldo diário não são apagados.
+          Remove no Tasy movimentos com <code>ID stone - …</code> na observação. Caixa e saldo
+          diário não são apagados. Use lotes (offset) para limpar desde uma data.
         </p>
       </header>
 
       <div className="callout">
-        Fluxo obrigatório: <strong>Preview</strong> → revisar → digitar <code>EXCLUIR</code> →{" "}
-        <strong>Confirmar</strong>. Lançamentos manuais (outro usuário) não entram.
+        Fluxo: <strong>Preview</strong> → revisar → digitar <code>EXCLUIR</code> →{" "}
+        <strong>Confirmar</strong>. Depois avance o offset e repita até esvaziar o período.
       </div>
 
       <div className="form-card">
         <h2>Filtros</h2>
         <div className="filters">
           <label>
-            Usuário Oracle (nm_usuario)
+            Usuário Oracle (preferência)
             <input
               value={nmUsuario}
               onChange={(e) => setNmUsuario(e.target.value)}
@@ -117,7 +130,7 @@ export function PurgePage() {
             <input
               value={cdCaixa}
               onChange={(e) => setCdCaixa(e.target.value)}
-              placeholder="ex.: 48"
+              placeholder="ex.: 48 (ou vazio = todos)"
             />
           </label>
           <label>
@@ -127,6 +140,16 @@ export function PurgePage() {
           <label>
             Data até
             <input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
+          </label>
+          <label>
+            Offset (lote)
+            <input
+              type="number"
+              min={0}
+              step={300}
+              value={offset}
+              onChange={(e) => setOffset(Number(e.target.value) || 0)}
+            />
           </label>
           <label>
             ID Stone (parcial)
@@ -154,9 +177,33 @@ export function PurgePage() {
           />
           Permitir recebimentos já confirmados (dt_fechamento)
         </label>
+        <label className="check-inline">
+          <input
+            type="checkbox"
+            checked={resetStagingSemOracle}
+            onChange={(e) => setResetStagingSemOracle(e.target.checked)}
+          />
+          Se não achar no Oracle, resetar só o staging (pendente)
+        </label>
         <div className="reprocess-group" style={{ marginTop: "0.75rem" }}>
           <button type="button" className="btn btn-accent" disabled={busy} onClick={() => void onPreview()}>
             Preview
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => setOffset((o) => Math.max(0, o - 300))}
+          >
+            Lote anterior
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => setOffset((o) => o + 300)}
+          >
+            Próximo lote (+300)
           </button>
         </div>
       </div>
@@ -215,9 +262,9 @@ export function PurgePage() {
                     <td className="num">{money(it.vl_transacao)}</td>
                     <td className="small">
                       {it.oracle
-                        ? `movto=${it.oracle.nr_seq_movto} · docs=${it.oracle.qtd_docs} · parc=${it.oracle.qtd_parcelas}${
+                        ? `movto=${it.oracle.nr_seq_movto} · user=${it.oracle.nm_usuario_movto || "?"} · docs=${it.oracle.qtd_docs}${
                             it.oracle.ja_fechado ? " · FECHADO" : ""
-                          }`
+                          }${it.oracle.matched_by === "id_stone_only" ? " · via ID" : ""}`
                         : "—"}
                     </td>
                     <td className="obs">{it.blocked_reason || ""}</td>
@@ -272,7 +319,7 @@ export function PurgePage() {
                       <code>{r.id_stone}</code>
                     </td>
                     <td className="small">{JSON.stringify(r.deleted || {})}</td>
-                    <td className="obs">{r.blocked_reason || ""}</td>
+                    <td className="obs">{r.blocked_reason || (r.staging_only ? "staging only" : "")}</td>
                   </tr>
                 ))}
               </tbody>

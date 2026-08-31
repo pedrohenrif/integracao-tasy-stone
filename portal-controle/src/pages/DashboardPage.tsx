@@ -35,11 +35,6 @@ export function DashboardPage() {
     setMsg("");
     try {
       const res = await reprocessarDiaApi(dia);
-      const pub = res.published_count ?? "?";
-      const parsed = res.parsed_count ?? "?";
-      const stats = res.parse_stats?.summary
-        ? String(res.parse_stats.summary)
-        : "";
       const pixPart = res.pix?.error
         ? ` PIX: falha — ${res.pix.error}`
         : res.pix?.message
@@ -47,17 +42,12 @@ export function DashboardPage() {
           : res.pix?.status
             ? ` PIX: ${res.pix.status}`
             : "";
-      const extra = res.stone_message || "";
       setMsg(
-        `Dia ${dia}: cartão parseados ${parsed}, publicados ${pub}.` +
-          (stats ? ` [${stats}]` : "") +
-          (extra ? ` ${extra}` : "") +
-          pixPart,
+        res.mensagem ||
+          `Dia ${dia}: PIX solicitado; cartão após webhook.` + pixPart,
       );
-      if (Number(pub) === 0 && !pixPart) {
-        setError(extra || stats || "Stone não retornou transações para esta data.");
-      } else if (res.pix?.error) {
-        setError(`Cartão ok; PIX falhou: ${res.pix.error}`);
+      if (res.pix?.error) {
+        setError(`PIX falhou: ${res.pix.error}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao executar dia");
@@ -126,8 +116,8 @@ export function DashboardPage() {
               Extrair cartão + PIX do dia
             </button>
             <span className="muted small">
-              Cartão + PIX → fila. 1 recebimento por caixa/dia (todas as maquininhas);
-              FECHAR quando as filas esvaziam.
+              PIX → webhook (mesmo vazio) → cartão; 1 recebimento/caixa; confirma ~5 min
+              após o lote parar de integrar.
             </span>
           </div>
         </div>

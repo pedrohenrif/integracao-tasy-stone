@@ -172,7 +172,7 @@ def test_confirm_token_so_uma_vez(mock_list, mock_repo_cls, _mock_log):
 
 
 def test_nao_stone_sem_match_oracle_nao_e_elegivel():
-    """Se o Oracle não achar movto do usuário, item fica bloqueado (protege manual)."""
+    """Se o Oracle não achar movto por ID stone, item fica bloqueado (protege manual)."""
     with (
         patch(
             "tasy_insercao.application.use_cases.purge_recebimentos_stone.listar_registros_por_id_stones"
@@ -199,3 +199,83 @@ def test_nao_stone_sem_match_oracle_nao_e_elegivel():
         prev = preview_purge(PurgeRequest(nm_usuario="stone", id_stones=["MANUAL1"]))
         assert prev["totais"]["sem_oracle"] == 1
         assert prev["totais"]["elegiveis"] == 0
+
+
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.registrar_acao_log")
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.TasyOracleRepository")
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.listar_registros_por_id_stones")
+def test_match_por_id_stone_sem_nm_usuario(mock_list, mock_repo_cls, _mock_log):
+    mock_list.return_value = [
+        {
+            "nr_sequencia": 10,
+            "id_stone": "ABC123",
+            "cd_caixa": 48,
+            "cd_status": 5,
+            "vl_transacao": 10.5,
+            "dt_movimentacao": date(2026, 8, 12),
+        }
+    ]
+    repo = MagicMock()
+    mock_repo_cls.return_value = repo
+    repo.preview_purge_stone.return_value = {
+        "nr_seq_movto": 1,
+        "nr_seq_caixa_rec": 2,
+        "vl_transacao": 10.5,
+        "dt_transacao": "2026-08-12",
+        "ja_fechado": False,
+        "qtd_docs": 1,
+        "qtd_parcelas": 1,
+        "nm_usuario_movto": "STONE",
+        "matched_by": "id_stone_only",
+    }
+
+    prev = preview_purge(PurgeRequest(nm_usuario="stone", id_stones=["ABC123"]))
+    assert prev["totais"]["elegiveis"] == 1
+    assert prev["totais"]["matched_id_only"] == 1
+
+
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.registrar_acao_log")
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.atualizar_status_registro")
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.TasyOracleRepository")
+@patch("tasy_insercao.application.use_cases.purge_recebimentos_stone.listar_registros_por_id_stones")
+def test_reset_staging_sem_oracle(mock_list, mock_repo_cls, mock_upd, _mock_log):
+    mock_list.return_value = [
+        {
+            "nr_sequencia": 10,
+            "id_stone": "ABC123",
+            "cd_caixa": 48,
+            "cd_status": 5,
+            "vl_transacao": 1,
+            "dt_movimentacao": date(2026, 8, 12),
+        }
+    ]
+    repo = MagicMock()
+    mock_repo_cls.return_value = repo
+    repo.preview_purge_stone.return_value = None
+    repo.purge_stone_transaction.return_value = {
+        "ok": False,
+        "blocked_reason": "Movto Stone não encontrado no Oracle (ID stone na observação).",
+        "deleted": {},
+    }
+
+    prev = preview_purge(
+        PurgeRequest(
+            nm_usuario="stone",
+            id_stones=["ABC123"],
+            reset_staging_sem_oracle=True,
+        )
+    )
+    assert prev["totais"]["elegiveis"] == 1
+    assert prev["items"][0]["can_purge"] is True
+
+    out = confirm_purge(
+        PurgeRequest(
+            nm_usuario="stone",
+            id_stones=["ABC123"],
+            reset_staging_sem_oracle=True,
+        ),
+        confirm_token=prev["confirm_token"],
+        confirm_phrase=CONFIRM_PHRASE,
+    )
+    assert out["ok"] == 1
+    mock_upd.assert_called_once()

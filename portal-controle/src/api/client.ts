@@ -369,6 +369,8 @@ export type PurgePreviewItem = {
     ja_fechado: boolean;
     qtd_docs: number;
     qtd_parcelas: number;
+    nm_usuario_movto?: string;
+    matched_by?: string;
   } | null;
   can_purge: boolean;
   blocked_reason: string | null;
@@ -380,11 +382,16 @@ export type PurgePreviewResponse = {
   expires_in_seconds: number;
   nm_usuario: string;
   allow_fechado: boolean;
+  offset?: number;
+  limit?: number;
+  has_more?: boolean;
   totais: {
     total: number;
     elegiveis: number;
     bloqueados: number;
     sem_oracle: number;
+    matched_id_only?: number;
+    staging_only?: number;
   };
   items: PurgePreviewItem[];
   avisos: string[];
@@ -397,6 +404,7 @@ export type PurgeResultItem = {
   deleted?: Record<string, number>;
   blocked_reason?: string | null;
   staging_status?: number;
+  staging_only?: boolean;
 };
 
 export type PurgeBody = {
@@ -408,6 +416,10 @@ export type PurgeBody = {
   data_ate?: string | null;
   id_stone?: string | null;
   allow_fechado?: boolean;
+  require_nm_usuario?: boolean;
+  reset_staging_sem_oracle?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 export async function purgePreviewApi(body: PurgeBody) {
