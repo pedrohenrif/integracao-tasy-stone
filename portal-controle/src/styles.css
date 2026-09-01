@@ -421,6 +421,7 @@ th {
 .badge.s7 { background: #fdecec; color: #8a2020; }
 .badge.s8 { background: var(--yellow-soft); color: #7a5a00; }
 .badge.s9 { background: #fff3e0; color: #9a5b00; }
+.badge.s10 { background: #eef0f3; color: #4a5560; }
 .badge.s1, .badge.s2 { background: var(--blue-soft); color: var(--blue-dark); }
 
 .login-page {

@@ -8,6 +8,7 @@ const STATUS: Record<number, string> = {
   7: "DLQ",
   8: "Sem Tesouraria",
   9: "Reintegrar",
+  10: "Ignorado",
 };
 
 function money(v: number) {
@@ -68,7 +69,7 @@ export function RegistrosTable({
         <tbody>
           {rows.map((r) => {
             const canReprocess =
-              r.cd_status === 6 || r.cd_status === 7 || r.cd_status === 8 || r.cd_status === 9;
+              r.cd_status === 6 || r.cd_status === 7 || r.cd_status === 8 || r.cd_status === 9 || r.cd_status === 10;
             return (
               <tr
                 key={r.nr_sequencia}
@@ -119,7 +120,7 @@ export function RegistrosTable({
                       title={
                         canReprocess
                           ? "Editar serial/caixa e reprocessar"
-                          : "Só status 6, 7, 8 ou 9"
+                          : "Só status 6, 7, 8, 9 ou 10"
                       }
                       onClick={() => onReprocessRow?.(r)}
                     >

@@ -45,7 +45,12 @@ class ExtrairConciliacaoCartao:
         self.parser = parser
         self.publisher = publisher
 
-    async def execute(self, reference_date: str) -> ExtracaoResultado:
+    async def execute(
+        self,
+        reference_date: str,
+        *,
+        terminals: set[str] | None = None,
+    ) -> ExtracaoResultado:
         raw = await self.stone_client.fetch(reference_date)
         raw_bytes = len(raw)
         logger.info("Recebido | cartao | date=%s | bytes=%s", reference_date, raw_bytes)
@@ -81,6 +86,23 @@ class ExtrairConciliacaoCartao:
                 reference_date,
                 len(transactions),
             )
+
+        if terminals:
+            wanted = {t.strip() for t in terminals if t and str(t).strip()}
+            before = len(transactions)
+            transactions = [
+                t for t in transactions if (t.nr_serie_maquininha or "").strip() in wanted
+            ]
+            logger.info(
+                "Filtro serial | cartao | date=%s | antes=%s | depois=%s | terminals=%s",
+                reference_date,
+                before,
+                len(transactions),
+                sorted(wanted),
+            )
+            parse_stats["filter_terminals"] = sorted(wanted)
+            parse_stats["filtered_from"] = before
+            parse_stats["filtered_to"] = len(transactions)
 
         tag = "ok" if transactions else "vazio"
         try:

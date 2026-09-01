@@ -4,6 +4,10 @@ from datetime import date, datetime, timedelta
 
 from workalendar.america import Brazil
 
+from tasy_insercao.domain.integracao.filtro_piloto import (
+    motivo_ignorar,
+    sem_caixa_policy,
+)
 from tasy_insercao.domain.integracao.models import (
     ResultadoIntegracao,
     StatusIntegracao,
@@ -27,8 +31,9 @@ class IntegrarTransacaoCartao:
     Use case: Caixa -> Dia -> Recebimento (1 por caixa/dia) ->
     Cartao/PIX (N) -> Documento agregado (soma). Todas as maquininhas do caixa
     no mesmo caixa_receb. FECHAR apos quiet period sem novo cartao/PIX nesse recebimento.
-    Sem maquininha/caixa: so movto_cartao (status Sem Tesouraria).
-    Idempotente por id_stone (PG status=5/8 ou movto no Oracle).
+    Sem maquininha ativa / fora do piloto: status IGNORADO (sem Oracle), salvo
+    SEM_CAIXA_POLICY=insert (legado Sem Tesouraria).
+    Idempotente por id_stone (PG status=5/8/10 ou movto no Oracle).
     """
 
     def __init__(self, staging: StagingRepositoryPort, tasy: TasyRepositoryPort) -> None:
@@ -82,6 +87,14 @@ class IntegrarTransacaoCartao:
                 retryable=False,
                 nr_sequencia_pg=existente[0],
             )
+        if existente and existente[1] == StatusIntegracao.IGNORADO.value:
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.IGNORADO,
+                mensagem="Já ignorado (idempotente)",
+                retryable=False,
+                nr_sequencia_pg=existente[0],
+            )
 
         # Status 9: se ainda há movto no Oracle → só FECHAR; se já foi limpo → reintegra do zero
         if existente and existente[1] == StatusIntegracao.CONFIRMACAO_PENDENTE.value:
@@ -128,10 +141,22 @@ class IntegrarTransacaoCartao:
                     config = None
 
             if config is None:
-                return self._integrar_sem_tesouraria(tx)
+                motivo = motivo_ignorar(serial=tx.nr_serie_maquininha, cd_caixa=None)
+                if motivo:
+                    return self._ignorar(tx, motivo)
+                if sem_caixa_policy() == "insert":
+                    return self._integrar_sem_tesouraria(tx)
+                return self._ignorar(
+                    tx,
+                    "maquininha inativa ou não cadastrada (SEM_CAIXA_POLICY=ignore)",
+                )
 
             cd_caixa = config["cd_caixa"]
             cd_trans_fin = config["cd_transacao_financeira"]
+            motivo = motivo_ignorar(serial=tx.nr_serie_maquininha, cd_caixa=cd_caixa)
+            if motivo:
+                return self._ignorar(tx, motivo, cd_caixa=cd_caixa)
+
             dt_saldo = self._data_saldo(tx.dt_movimentacao)
             dt_str = dt_saldo.strftime("%Y-%m-%d")
 
@@ -388,11 +413,34 @@ class IntegrarTransacaoCartao:
                 nr_seq_caixa_receb=None if deleted else nr_seq_receb,
             )
 
+    def _ignorar(
+        self,
+        tx: TransacaoCartao,
+        motivo: str,
+        *,
+        cd_caixa: int | None = None,
+    ) -> ResultadoIntegracao:
+        """Não grava no Oracle — só staging status 10 (piloto / sem caixa)."""
+        obs = f"IGNORADO | serial={tx.nr_serie_maquininha} | {motivo}"
+        nr_seq_pg = self.staging.ensure_registro(
+            tx,
+            StatusIntegracao.IGNORADO.value,
+            obs,
+            cd_caixa=cd_caixa if cd_caixa is not None else 0,
+        )
+        logger.info("Ignorado | id_stone=%s | %s", tx.id_stone, obs)
+        return ResultadoIntegracao(
+            id_stone=tx.id_stone,
+            status=StatusIntegracao.IGNORADO,
+            mensagem=obs,
+            retryable=False,
+            nr_sequencia_pg=nr_seq_pg,
+        )
+
     def _integrar_sem_tesouraria(self, tx: TransacaoCartao) -> ResultadoIntegracao:
         """
-        Serial sem cadastro em maquininha_stone:
-        grava só movto_cartao_cr (sem saldo diário / caixa_receb / documento).
-        Status 8 — Sem Tesouraria (não vai para DLQ).
+        Legado (SEM_CAIXA_POLICY=insert): serial sem cadastro grava só
+        movto_cartao_cr (sem saldo / caixa_receb). Status 8 — Sem Tesouraria.
         """
         dt_saldo = self._data_saldo(tx.dt_movimentacao)
         obs = (

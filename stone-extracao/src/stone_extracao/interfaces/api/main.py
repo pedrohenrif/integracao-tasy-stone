@@ -46,6 +46,7 @@ from stone_extracao.infrastructure.stone.conciliation_client import (
     StoneFetchError,
 )
 from stone_extracao.infrastructure.stone.pix_client import PixFetchError, StonePixClient
+from stone_extracao.infrastructure.store.filtro_seriais import resolve_terminals
 from stone_extracao.infrastructure.store.ultima_extracao import salvar_extracao
 from stone_extracao.interfaces.api.painel import router as painel_router
 
@@ -55,6 +56,8 @@ logger = get_logger(__name__)
 async def executar_extracao_cartao(
     publisher: RabbitPublisher,
     reference_date: str,
+    *,
+    terminals: set[str] | None = None,
 ) -> ExtracaoResultado:
     """Caminho único: API manual, D-1, webhook PIX e cron fallback."""
     use_case = ExtrairConciliacaoCartao(
@@ -62,7 +65,8 @@ async def executar_extracao_cartao(
         parser=CartaoXmlParser(),
         publisher=publisher,
     )
-    result = await use_case.execute(reference_date)
+    wanted = terminals if terminals is not None else resolve_terminals()
+    result = await use_case.execute(reference_date, terminals=wanted)
     salvar_extracao(
         reference_date=result.reference_date,
         source=result.source,
@@ -182,6 +186,7 @@ async def executar_extracao_cartao_com_gate(
     *,
     force: bool = False,
     origem: str = "api",
+    terminals: set[str] | None = None,
 ) -> ExtracaoResultado:
     """
     Extrai cartão. Com LOTE_AGUARDA_PIX_WEBHOOK e force=False:
@@ -194,7 +199,7 @@ async def executar_extracao_cartao_com_gate(
     iso = lote.ymd_to_iso(ymd)
 
     if force or not settings.LOTE_AGUARDA_PIX_WEBHOOK:
-        result = await executar_extracao_cartao(publisher, ymd)
+        result = await executar_extracao_cartao(publisher, ymd, terminals=terminals)
         if settings.LOTE_AGUARDA_PIX_WEBHOOK:
             lote.registrar_cartao_publicado(iso, result.published_count)
         return result
@@ -210,7 +215,7 @@ async def executar_extracao_cartao_com_gate(
         if not lote.reservar_disparo_cartao(iso):
             return _skipped_cartao(ymd, "skipped_race", "Cartão já em disparo")
         try:
-            result = await executar_extracao_cartao(publisher, ymd)
+            result = await executar_extracao_cartao(publisher, ymd, terminals=terminals)
             lote.registrar_cartao_publicado(iso, result.published_count)
             return result
         except Exception:
@@ -227,7 +232,7 @@ async def executar_extracao_cartao_com_gate(
             ),
         )
 
-    result = await executar_extracao_cartao(publisher, ymd)
+    result = await executar_extracao_cartao(publisher, ymd, terminals=terminals)
     lote.registrar_cartao_publicado(iso, result.published_count)
     return result
 
@@ -480,12 +485,17 @@ async def ingest_cartao(
         False,
         description="true = ignora gate PIX (ops/teste). false = exige webhook PIX do dia.",
     ),
+    terminal: str | None = Query(
+        default=None,
+        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve PUBLICAR_SOMENTE_SERIAIS.",
+    ),
 ):
     """Extrato Cartão: busca ativa na API Stone e publica 1 msg/tx."""
     publisher = _publisher(request)
+    terminals = resolve_terminals(terminal)
     try:
         result = await executar_extracao_cartao_com_gate(
-            publisher, date, force=force, origem="api"
+            publisher, date, force=force, origem="api", terminals=terminals
         )
     except HTTPException:
         raise
@@ -505,6 +515,10 @@ async def ingest_cartao_d1(
         False,
         description="true = ignora gate PIX (ops/teste).",
     ),
+    terminal: str | None = Query(
+        default=None,
+        description="Filtra serial(is). Vários separados por vírgula.",
+    ),
 ):
     """
     Rotina de produção (manual): extrai **sempre o dia anterior** (D-1)
@@ -513,9 +527,14 @@ async def ingest_cartao_d1(
     reference_date = data_ontem(settings.CARTAO_CRON_TZ)
     logger.info("Extração cartão D-1 (manual) | date=%s | force=%s", reference_date, force)
     publisher = _publisher(request)
+    terminals = resolve_terminals(terminal)
     try:
         result = await executar_extracao_cartao_com_gate(
-            publisher, reference_date, force=force, origem="api"
+            publisher,
+            reference_date,
+            force=force,
+            origem="api",
+            terminals=terminals,
         )
     except HTTPException:
         raise
@@ -582,7 +601,9 @@ async def _process_pix_webhook_body(publisher: RabbitPublisher, body: bytes) -> 
         downloader=StonePixClient(),
     )
     try:
-        result = await use_case.execute(body, source="webhook")
+        result = await use_case.execute(
+            body, source="webhook", terminals=resolve_terminals()
+        )
         logger.info(
             "Webhook PIX processado | type=%s | parsed=%s | published=%s | ref=%s",
             result.event_type,
@@ -696,7 +717,9 @@ async def pix_webhook(
         downloader=StonePixClient(),
     )
     try:
-        result = await use_case.execute(body, source="webhook")
+        result = await use_case.execute(
+            body, source="webhook", terminals=resolve_terminals()
+        )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Falha ao processar webhook PIX: {exc}") from exc
 

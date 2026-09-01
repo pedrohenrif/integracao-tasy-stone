@@ -37,6 +37,7 @@ _STATUS_REPROCESSAVEIS = {
     StatusIntegracao.ERRO_DEFINITIVO.value,
     StatusIntegracao.SEM_TESOURARIA.value,
     StatusIntegracao.CONFIRMACAO_PENDENTE.value,
+    StatusIntegracao.IGNORADO.value,
 }
 
 
@@ -229,7 +230,7 @@ async def reprocessar_registro(
         raise ValueError("Já integrado (status 5) — não pode reprocessar")
     if status not in _STATUS_REPROCESSAVEIS:
         raise ValueError(
-            f"Status {status} não permite reprocesso com edição. Use status 6, 7, 8 ou 9."
+            f"Status {status} não permite reprocesso com edição. Use status 6, 7, 8, 9 ou 10."
         )
 
     antes = _snapshot_registro(row)

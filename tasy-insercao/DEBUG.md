@@ -55,7 +55,9 @@ Reprocessar a mesma data / reenviar a fila é seguro: as que já estão OK são 
 | 5 | Integrado | OK no Tasy (ou já existia — idempotente) |
 | 6 | Erro + retry | Falha transitória; vai para fila retry |
 | 7 | DLQ | Erro definitivo após esgotar tentativas |
-| 8 | Sem Tesouraria | Movto cartão no Tasy **sem** caixa_receb/saldo (serial sem cadastro). Não vai para DLQ. |
+| 8 | Sem Tesouraria | Legado (`SEM_CAIXA_POLICY=insert`): movto no Tasy **sem** caixa_receb. Não vai para DLQ. |
+| 9 | Reintegrar | FECHAR falhou; Oracle limpo — reprocessar do zero. |
+| 10 | Ignorado | Piloto / sem caixa (`SEM_CAIXA_POLICY=ignore`) ou fora de `INTEGRAR_SOMENTE_*`. **Não** grava Oracle. |
 
 ---
 

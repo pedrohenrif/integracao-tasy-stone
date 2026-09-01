@@ -122,6 +122,7 @@ def resumo(f: FiltrosPainel) -> dict[str, Any]:
                 COUNT(*) FILTER (WHERE r.cd_status = 7) AS dlq,
                 COUNT(*) FILTER (WHERE r.cd_status = 8) AS sem_tesouraria,
                 COUNT(*) FILTER (WHERE r.cd_status = 9) AS confirmacao_pendente,
+                COUNT(*) FILTER (WHERE r.cd_status = 10) AS ignorado,
                 COUNT(*) FILTER (WHERE r.cd_status IN (1, 2)) AS pendente,
                 COALESCE(SUM(r.vl_transacao), 0) AS soma_valor,
                 COALESCE(SUM(r.vl_transacao) FILTER (WHERE r.cd_status = 5), 0) AS soma_ok

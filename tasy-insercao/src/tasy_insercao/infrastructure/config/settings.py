@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # Quantas vezes pode adiar o FECHAR (quiet period de novo) antes de forçar.
     FECHAR_MAX_ADIAMENTOS: int = 12  # 12 * 5min ~= 1h
 
+    # Piloto / segurança Oracle:
+    # ignore = serial sem maquininha ativa → status 10, sem insert no Tasy (padrão).
+    # insert = legado Sem Tesouraria (status 8 + movto sem caixa_receb).
+    SEM_CAIXA_POLICY: str = "ignore"
+    # Allowlist opcional (vazio = todos os cadastros ativos). Ex.: "48" / "PB09231S72079"
+    INTEGRAR_SOMENTE_CAIXAS: str = ""
+    INTEGRAR_SOMENTE_SERIAIS: str = ""
+
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"
 

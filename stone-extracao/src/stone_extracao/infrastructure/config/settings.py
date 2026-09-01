@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Cron de cartão fica como fallback se o webhook não chegar.
     LOTE_AGUARDA_PIX_WEBHOOK: bool = True
 
+    # Piloto: só publica estes seriais na fila (vazio = todos). Ex.: PB09231S72079
+    # Vale para cartão (API/cron) e PIX (webhook). API ?terminal= sobrescreve.
+    PUBLICAR_SOMENTE_SERIAIS: str = ""
+
     # Notifica auditoria do portal (tasy-insercao) sobre jobs do scheduler
     PORTAL_BASE_URL: str = "http://127.0.0.1:8001"
     PORTAL_INTERNAL_TOKEN: str = ""

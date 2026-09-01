@@ -80,9 +80,12 @@ class StatusIntegracao(int, Enum):
     ERRO_RETRY = 6
     ERRO_DEFINITIVO = 7
     # Movto cartão no Tasy sem caixa_saldo_diario / caixa_receb (serial sem cadastro)
+    # Só quando SEM_CAIXA_POLICY=insert (legado).
     SEM_TESOURARIA = 8
     # FECHAR falhou: Oracle é removido; painel status 9 = reintegrar do zero
     CONFIRMACAO_PENDENTE = 9
+    # Não integra no Oracle: serial inativo / fora do piloto / sem caixa (policy ignore)
+    IGNORADO = 10
 
 
 class ResultadoIntegracao(BaseModel):

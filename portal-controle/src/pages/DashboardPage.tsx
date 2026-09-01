@@ -86,6 +86,10 @@ export function DashboardPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
+          <span>Ignorado (10)</span>
+          <b>{totais.ignorado ?? 0}</b>
+        </div>
+        <div className="card">
           <span>Reintegrar (9)</span>
           <b>{totais.confirmacao_pendente ?? 0}</b>
         </div>
