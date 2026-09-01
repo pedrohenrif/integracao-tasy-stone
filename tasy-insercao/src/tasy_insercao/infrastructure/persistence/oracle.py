@@ -301,6 +301,15 @@ class TasyOracleRepository:
             )
         return vl
 
+    def get_nr_seq_caixa_de_receb(self, nr_seq_caixa_rec: int) -> int | None:
+        row = self.db.fetchone(
+            ora.SELECT_CAIXA_DE_RECEB,
+            {"nr_seq_caixa_rec": int(nr_seq_caixa_rec)},
+        )
+        if not row or row[0] is None:
+            return None
+        return int(row[0])
+
     def confirmar_caixa_receb_stone(
         self, nr_seq_caixa_rec: int, dt_recebimento: str
     ) -> float:

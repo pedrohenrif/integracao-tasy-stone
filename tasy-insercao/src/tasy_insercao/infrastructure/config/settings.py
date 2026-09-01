@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Cada insert remarca o timer — so confirma depois que o lote (cartao+PIX) assentou.
     FECHAR_APOS_LOTE_ENABLED: bool = True
     FECHAR_APOS_LOTE_SECONDS: int = 300  # 5 min apos o ultimo insert nesse recebimento
+    # Antes do FECHAR: exige staging do caixa/dia sem pendente/retry/processando (1,2,6,9).
+    FECHAR_REQUIRE_STAGING_OK: bool = True
+    # Antes do FECHAR: se stone-extracao ainda aguarda webhook PIX do dia, adia.
+    FECHAR_REQUIRE_LOTE_PIX_OK: bool = True
+    # Quantas vezes pode adiar o FECHAR (quiet period de novo) antes de forçar.
+    FECHAR_MAX_ADIAMENTOS: int = 12  # 12 * 5min ~= 1h
 
     APP_NAME: str = "tasy-insercao"
     APP_ENV: str = "homolog"

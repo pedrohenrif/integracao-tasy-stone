@@ -89,6 +89,13 @@ WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
   AND m.dt_cancelamento IS NULL
 """
 
+SELECT_CAIXA_DE_RECEB = """
+SELECT csd.nr_seq_caixa
+FROM caixa_receb cr
+JOIN caixa_saldo_diario csd ON csd.nr_sequencia = cr.nr_seq_saldo_caixa
+WHERE cr.nr_sequencia = :nr_seq_caixa_rec
+"""
+
 SELECT_CAIXA_RECEB_TRANS_E_DATA = """
 SELECT
     nr_seq_trans_financ,

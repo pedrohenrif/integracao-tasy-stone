@@ -256,6 +256,51 @@ def atualizar_status_registro(nr_sequencia: int, cd_status: int, obs: str) -> No
         conn.commit()
 
 
+def contar_incompletos_dia_caixa(data_ref: date, cd_caixa: int) -> dict[str, int]:
+    """
+    Conta registros do staging ainda nao integrados no caixa/dia.
+    Incompleto = status 1,2,6,9 (pendente/processando/retry/confirmacao).
+    DLQ (7) e Sem Tesouraria (8) nao bloqueiam o FECHAR por padrao.
+    """
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE r.cd_status IN (1, 2, 6, 9)) AS incompletos,
+                COUNT(*) FILTER (WHERE r.cd_status = 5) AS ok,
+                COUNT(*) FILTER (WHERE r.cd_status = 7) AS dlq,
+                COUNT(*) FILTER (WHERE r.cd_status = 8) AS sem_tesouraria,
+                COUNT(*) FILTER (
+                    WHERE LOWER(COALESCE(r.cd_tipo_transacao, '')) = 'pix'
+                ) AS pix_total,
+                COUNT(*) FILTER (
+                    WHERE LOWER(COALESCE(r.cd_tipo_transacao, '')) = 'pix'
+                      AND r.cd_status IN (1, 2, 6, 9)
+                ) AS pix_incompletos,
+                COUNT(*) AS total
+            FROM registro_maquininha r
+            WHERE r.cd_caixa = %(cd_caixa)s
+              AND r.dt_movimentacao >= %(data_de)s
+              AND r.dt_movimentacao < %(data_ate)s + INTERVAL '1 day'
+            """,
+            {
+                "cd_caixa": int(cd_caixa),
+                "data_de": datetime.combine(data_ref, datetime.min.time()),
+                "data_ate": data_ref,
+            },
+        )
+        row = cur.fetchone() or {}
+        return {
+            "incompletos": int(row.get("incompletos") or 0),
+            "ok": int(row.get("ok") or 0),
+            "dlq": int(row.get("dlq") or 0),
+            "sem_tesouraria": int(row.get("sem_tesouraria") or 0),
+            "pix_total": int(row.get("pix_total") or 0),
+            "pix_incompletos": int(row.get("pix_incompletos") or 0),
+            "total": int(row.get("total") or 0),
+        }
+
+
 def atualizar_registro_reprocesso(
     nr_sequencia: int,
     *,

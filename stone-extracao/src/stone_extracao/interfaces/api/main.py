@@ -404,6 +404,25 @@ def _to_response(result: ExtracaoResultado, *, mode: str) -> ConciliationRespons
     )
 
 
+@app.get("/lote/status")
+async def lote_status(
+    date: str = Query(..., description="YYYY-MM-DD ou YYYYMMDD"),
+):
+    """Estado do gate PIX→cartão do dia (cron / FECHAR do consumer consulta)."""
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
+    try:
+        st = lote.status_lote(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    iso = date.strip()[:10] if "-" in date else lote.ymd_to_iso(date)
+    return {
+        "reference_date": iso,
+        "lote_aguarda_pix_webhook": settings.LOTE_AGUARDA_PIX_WEBHOOK,
+        **st,
+    }
+
+
 @app.get("/health")
 async def health(request: Request):
     return {
