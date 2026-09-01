@@ -91,7 +91,12 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
       </label>
       <label>
         ID Stone
-        <input value={value.id_stone || ""} onChange={(e) => set("id_stone", e.target.value)} placeholder="parcial" />
+        <input
+          value={value.id_stone || ""}
+          onChange={(e) => set("id_stone", e.target.value)}
+          placeholder="ex.: 310633…"
+          autoComplete="off"
+        />
       </label>
       <label>
         Serial

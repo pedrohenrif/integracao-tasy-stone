@@ -58,15 +58,28 @@ WHERE m.nr_seq_caixa_rec = :nr_seq_caixa_rec
   AND m.dt_cancelamento IS NULL
 """
 
+# 1 doc agregado Stone por recebimento (nr_seq_movto_cartao NULL).
+# NAO filtrar nr_seq_lote IS NULL: apos FECHAR o Tasy preenche o lote e o
+# upsert antigo criava um 2o documento (valor dobrado na tela).
 SELECT_DOC_AGREGADO_POR_CAIXA_RECEB = """
 SELECT nr_sequencia FROM (
     SELECT d.nr_sequencia
     FROM movto_trans_financ d
     WHERE d.nr_seq_caixa_rec = :nr_seq_caixa_rec
-      AND d.nm_usuario = 'stone'
-      AND d.nr_seq_lote IS NULL
+      AND LOWER(d.nm_usuario) = 'stone'
+      AND d.nr_seq_movto_cartao IS NULL
     ORDER BY d.nr_sequencia
 ) WHERE ROWNUM = 1
+"""
+
+SELECT_DOCS_AGREGADOS_EXTRA_POR_CAIXA_RECEB = """
+SELECT d.nr_sequencia
+FROM movto_trans_financ d
+WHERE d.nr_seq_caixa_rec = :nr_seq_caixa_rec
+  AND LOWER(d.nm_usuario) = 'stone'
+  AND d.nr_seq_movto_cartao IS NULL
+  AND d.nr_sequencia <> :nr_seq_doc_keep
+ORDER BY d.nr_sequencia
 """
 
 SELECT_QTD_MOVTO_POR_CAIXA_RECEB = """
@@ -399,7 +412,15 @@ SET d.vl_transacao = :vl_transacao,
     d.nr_seq_movto_cartao = NULL,
     d.dt_atualizacao = SYSDATE
 WHERE d.nr_sequencia = :nr_seq_doc
-  AND d.nm_usuario = 'stone'
+  AND LOWER(d.nm_usuario) = 'stone'
+"""
+
+DELETE_DOC_AGREGADO_EXTRA = """
+DELETE FROM movto_trans_financ d
+WHERE d.nr_sequencia = :nr_seq_doc
+  AND LOWER(d.nm_usuario) = 'stone'
+  AND d.nr_seq_movto_cartao IS NULL
+  AND d.nr_seq_caixa_rec = :nr_seq_caixa_rec
 """
 
 # Documento legado (1:1 com cartão) — mantido para compat.

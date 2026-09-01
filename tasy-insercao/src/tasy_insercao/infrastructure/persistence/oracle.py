@@ -240,18 +240,48 @@ class TasyOracleRepository:
             {"nr_seq_caixa_rec": nr_seq_caixa_rec},
         )
         if doc:
+            nr_doc = int(doc[0])
             self.db.execute(
                 ora.UPDATE_DOC_AGREGADO_VALOR,
                 {
                     "vl_transacao": vl,
                     "nr_seq_trans_financ": nr_seq_trans_financ,
-                    "nr_seq_doc": int(doc[0]),
+                    "nr_seq_doc": nr_doc,
                 },
             )
+            # Remove docs agregados duplicados (bug antigo pos-FECHAR).
+            extras = self.db.fetchall(
+                ora.SELECT_DOCS_AGREGADOS_EXTRA_POR_CAIXA_RECEB,
+                {
+                    "nr_seq_caixa_rec": nr_seq_caixa_rec,
+                    "nr_seq_doc_keep": nr_doc,
+                },
+            )
+            for extra in extras or []:
+                try:
+                    self.db.execute(
+                        ora.DELETE_DOC_AGREGADO_EXTRA,
+                        {
+                            "nr_seq_doc": int(extra[0]),
+                            "nr_seq_caixa_rec": nr_seq_caixa_rec,
+                        },
+                    )
+                    logger.warning(
+                        "Documento agregado duplicado removido | caixa_receb=%s | doc=%s | keep=%s",
+                        nr_seq_caixa_rec,
+                        extra[0],
+                        nr_doc,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Falha ao remover doc agregado extra | caixa_receb=%s | doc=%s",
+                        nr_seq_caixa_rec,
+                        extra[0],
+                    )
             logger.info(
                 "Documento agregado atualizado | caixa_receb=%s | doc=%s | vl=%s",
                 nr_seq_caixa_rec,
-                doc[0],
+                nr_doc,
                 vl,
             )
         else:
