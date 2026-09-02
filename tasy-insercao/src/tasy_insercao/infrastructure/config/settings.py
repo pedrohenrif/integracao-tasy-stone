@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     ORACLE_USER: str = ""
     ORACLE_PASS: str = ""
     ORACLE_DSN: str = ""
+    # Thick mode: necessário se o Oracle usar verifier antigo (DPY-3015).
+    # true = oracledb.init_oracle_client (exige Instant Client na VM).
+    ORACLE_THICK_MODE: bool = True
+    # Pasta do Instant Client, ex.: C:\oracle\instantclient_21_13
+    # Vazio = deixa o oracledb achar no PATH.
+    ORACLE_CLIENT_LIB_DIR: str = ""
     # Sessão Tasy antes do FECHAR_CAIXA_RECEB (CTB online exige perfil ativo)
     # ADM DO SISTEMA = 1848; stone também tem FINANCEIRO - ANALISTA = 2351
     TASY_NM_USUARIO: str = "stone"

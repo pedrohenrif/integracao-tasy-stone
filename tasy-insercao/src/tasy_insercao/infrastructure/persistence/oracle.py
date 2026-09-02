@@ -11,6 +11,42 @@ from tasy_insercao.infrastructure.queries import oracle_queries as ora
 
 logger = get_logger(__name__)
 
+_oracle_client_ready = False
+
+
+def ensure_oracle_client() -> None:
+    """
+    Liga thick mode uma vez (Instant Client).
+    Corrige DPY-3015: password verifier type 0x939 not supported in thin mode.
+    """
+    global _oracle_client_ready
+    if _oracle_client_ready:
+        return
+    if not settings.ORACLE_THICK_MODE:
+        _oracle_client_ready = True
+        logger.info("Oracle | thin mode (ORACLE_THICK_MODE=false)")
+        return
+    lib_dir = (settings.ORACLE_CLIENT_LIB_DIR or "").strip() or None
+    try:
+        if lib_dir:
+            oracledb.init_oracle_client(lib_dir=lib_dir)
+            logger.info("Oracle | thick mode | lib_dir=%s", lib_dir)
+        else:
+            oracledb.init_oracle_client()
+            logger.info("Oracle | thick mode | lib_dir=PATH")
+    except Exception as exc:
+        # Já inicializado em outro import / processo
+        msg = str(exc).lower()
+        if "already been initialized" in msg or "has already been called" in msg:
+            logger.info("Oracle | thick mode já inicializado")
+        else:
+            raise RuntimeError(
+                "Falha ao iniciar Oracle thick mode (Instant Client). "
+                "Instale o Instant Client e defina ORACLE_CLIENT_LIB_DIR, "
+                f"ou ajuste o PATH. Detalhe: {exc}"
+            ) from exc
+    _oracle_client_ready = True
+
 
 class OracleDB:
     def __init__(self) -> None:
@@ -20,6 +56,7 @@ class OracleDB:
         if self._conn is None:
             if not settings.ORACLE_USER or not settings.ORACLE_DSN:
                 raise RuntimeError("ORACLE_USER/ORACLE_DSN não configurados")
+            ensure_oracle_client()
             logger.info("Conectando Oracle")
             self._conn = oracledb.connect(
                 user=settings.ORACLE_USER,
