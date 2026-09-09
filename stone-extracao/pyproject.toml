@@ -13,6 +13,7 @@ dependencies = [
     "aio-pika (>=9.5.0,<10.0.0)",
     "httpx (>=0.28.0,<1.0.0)",
     "apscheduler (>=3.10.0,<4.0.0)",
+    "python-multipart (>=0.0.9,<1.0.0)",
 ]
 
 [tool.poetry]
