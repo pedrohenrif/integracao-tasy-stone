@@ -235,6 +235,48 @@ export async function reprocessarDiaApi(date: string) {
   });
 }
 
+export async function importarPixCsvApi(date: string, file: File) {
+  const token = localStorage.getItem("portal_token");
+  const form = new FormData();
+  form.append("file", file);
+  const qs = new URLSearchParams({ date, trigger_cartao: "false" });
+  const res = await fetch(`${API_BASE}/api/reprocessar/pix-csv?${qs.toString()}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("portal_token");
+    localStorage.removeItem("portal_user");
+    window.location.href = "/login";
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = (data as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+  }
+  return data as {
+    reference_date: string;
+    parsed_count?: number;
+    published_count?: number;
+    mensagem?: string;
+    sample_ids?: string[];
+  };
+}
+
+export async function extrairCartaoDiaApi(date: string) {
+  return request<{
+    reference_date: string;
+    parsed_count?: number;
+    published_count?: number;
+    mensagem?: string;
+    totais_avisos?: string[];
+  }>("/api/reprocessar/cartao", {
+    method: "POST",
+    body: JSON.stringify({ date }),
+  });
+}
+
 export async function reprocessarRegistroApi(body: {
   nr_sequencia: number;
   nr_serie_maquininha?: string;

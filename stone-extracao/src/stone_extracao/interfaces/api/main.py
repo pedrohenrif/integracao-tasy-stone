@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, HttpUrl
 
 from stone_extracao.application.services.data_referencia import data_ontem, data_ontem_iso
@@ -796,4 +796,77 @@ async def pix_dev_from_sample(
         published_count=result.published_count,
         queue=settings.RABBITMQ_QUEUE_PIX,
         sample_ids=result.sample_ids,
+    )
+
+
+@app.post("/pix/conciliation/csv", response_model=PixWebhookResponse)
+async def pix_csv_manual(
+    request: Request,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Dia do lote YYYY-MM-DD"),
+    trigger_cartao: bool = Query(
+        False,
+        description="true = dispara cartão após publicar o PIX. false = só PIX (depois extraia o cartão).",
+    ),
+    terminal: str | None = Query(
+        default=None,
+        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve PUBLICAR_SOMENTE_SERIAIS.",
+    ),
+    file: UploadFile = File(..., description="CSV do extrato PIX Stone (o mesmo do webhook)"),
+):
+    """
+    Retroativo: publica PIX a partir de um CSV já baixado (Stone só entrega D-1 via webhook).
+    Marca o lote do dia como webhook ok para o FECHAR. Cartão é opcional.
+    """
+    from stone_extracao.infrastructure.store import pix_lote_state as lote
+
+    raw = await file.read()
+    if not raw or not raw.strip():
+        raise HTTPException(status_code=400, detail="Arquivo CSV vazio")
+
+    publisher = _publisher(request)
+    terminals = resolve_terminals(terminal)
+    use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
+    try:
+        result = await use_case.execute(
+            raw, source="csv_manual", terminals=terminals
+        )
+    except Exception as exc:
+        logger.exception("PIX CSV manual falhou | date=%s | file=%s", date, file.filename)
+        raise HTTPException(status_code=422, detail=f"Falha ao parsear/publicar CSV PIX: {exc}") from exc
+
+    result.reference_date = date
+    lote.marcar_webhook_recebido(date, pix_published=result.published_count)
+    logger.info(
+        "PIX CSV manual | date=%s | file=%s | parsed=%s | published=%s | trigger_cartao=%s",
+        date,
+        file.filename,
+        result.parsed_count,
+        result.published_count,
+        trigger_cartao,
+    )
+
+    if trigger_cartao:
+        try:
+            await _disparar_cartao_apos_pix(
+                publisher, date, origem="pix_csv_manual"
+            )
+        except Exception:
+            logger.exception("PIX CSV manual | cartão falhou após CSV | date=%s", date)
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"PIX publicado ({result.published_count}), mas a extração de cartão falhou. "
+                    "Use POST /cartao/conciliation?force=true."
+                ),
+            ) from None
+
+    return PixWebhookResponse(
+        source=result.source,
+        parsed_count=result.parsed_count,
+        published_count=result.published_count,
+        queue=settings.RABBITMQ_QUEUE_PIX,
+        sample_ids=result.sample_ids,
+        event_type="pix",
+        status="processed",
+        reference_date=date,
     )

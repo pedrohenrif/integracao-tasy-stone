@@ -24,6 +24,7 @@ const BLOCKS: HelpBlock[] = [
       "Mostra totais do staging: quantos registros estão integrados, em retry, DLQ ou sem tesouraria.",
       "Também resume quantas mensagens estão nas filas do RabbitMQ.",
       "Perfil Financeiro: consulta e cadastros (maquininhas/mapeamentos). O botão de extrair o dia é só admin.",
+      "Retroativo: se a Stone não reenviar PIX (só D-1), o admin importa o CSV do dia e depois extrai só o cartão.",
     ],
   },
   {

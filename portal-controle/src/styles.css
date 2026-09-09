@@ -161,9 +161,10 @@ code { font-size: 0.85em; }
 
 .reprocess-bar {
   display: flex;
+  flex-direction: column;
   flex-wrap: wrap;
   gap: 1rem 1.5rem;
-  align-items: flex-end;
+  align-items: flex-start;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);

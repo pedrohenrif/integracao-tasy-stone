@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { filasApi, registrosApi, reprocessarDiaApi } from "../api/client";
+import { extrairCartaoDiaApi, filasApi, importarPixCsvApi, registrosApi, reprocessarDiaApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { FilaInfo, ResumoTotais } from "../types";
 
@@ -15,6 +15,7 @@ export function DashboardPage() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [dia, setDia] = useState("");
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -51,6 +52,39 @@ export function DashboardPage() {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao executar dia");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onImportarPixCsv() {
+    if (!dia || !csvFile) return;
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await importarPixCsvApi(dia, csvFile);
+      setMsg(
+        res.mensagem ||
+          `PIX CSV ${dia}: publicados=${res.published_count ?? 0}. Depois extraia o cartão.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao importar CSV PIX");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onExtrairCartao() {
+    if (!dia) return;
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await extrairCartaoDiaApi(dia);
+      setMsg(res.mensagem || `Cartão ${dia} extraído.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao extrair cartão");
     } finally {
       setBusy(false);
     }
@@ -121,7 +155,38 @@ export function DashboardPage() {
             </button>
             <span className="muted small">
               PIX → webhook (mesmo vazio) → cartão; 1 recebimento/caixa; confirma ~5 min
-              após o lote parar de integrar.
+              após o lote parar de integrar. Só D-1 via Stone.
+            </span>
+          </div>
+          <div className="reprocess-group">
+            <strong>Retroativo — CSV PIX + cartão (um dia por vez)</strong>
+            <label className="reprocess-date">
+              CSV PIX
+              <input
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !dia || !csvFile}
+              onClick={() => void onImportarPixCsv()}
+            >
+              1) Importar PIX CSV
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !dia}
+              onClick={() => void onExtrairCartao()}
+            >
+              2) Extrair só cartão
+            </button>
+            <span className="muted small">
+              Use quando a Stone não reenvia PIX (D-2+). Ordem: CSV do dia → esperar fila PIX
+              drenar → extrair cartão do mesmo dia. Não use o botão amarelo nesses dias.
             </span>
           </div>
         </div>

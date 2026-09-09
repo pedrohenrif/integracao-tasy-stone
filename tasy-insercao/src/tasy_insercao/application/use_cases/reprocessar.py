@@ -445,6 +445,140 @@ async def reprocessar_dia(
     }
 
 
+async def importar_pix_csv(
+    data_ref: date,
+    *,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str | None = None,
+    trigger_cartao: bool = False,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Envia CSV PIX ao stone-extracao (retroativo D-2+). Não solicita webhook Stone."""
+    iso = data_ref.strftime("%Y-%m-%d")
+    base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
+    url = f"{base}/pix/conciliation/csv"
+    user_id, login = _user_meta(user)
+    name = (filename or "pix.csv").strip() or "pix.csv"
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        try:
+            resp = await client.post(
+                url,
+                params={"date": iso, "trigger_cartao": str(trigger_cartao).lower()},
+                files={
+                    "file": (
+                        name,
+                        file_bytes,
+                        content_type or "text/csv",
+                    )
+                },
+            )
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"stone-extracao inacessível em {base}: {exc}. "
+                "Verifique se o serviço está no ar (:8000)."
+            ) from exc
+
+    if resp.status_code >= 400:
+        detail = resp.text[:800]
+        try:
+            detail = str(resp.json().get("detail") or detail)
+        except Exception:
+            pass
+        registrar_acao_log(
+            user_id=user_id,
+            login=login,
+            acao="importar_pix_csv_erro",
+            id_stone=None,
+            depois={"reference_date": iso, "file": name, "error": detail},
+            obs=f"CSV PIX {iso}: {detail[:300]}",
+        )
+        raise RuntimeError(f"stone-extracao CSV PIX falhou: {detail}") from None
+
+    body = resp.json()
+    published = body.get("published_count")
+    registrar_acao_log(
+        user_id=user_id,
+        login=login,
+        acao="importar_pix_csv",
+        id_stone=None,
+        depois={
+            "reference_date": iso,
+            "file": name,
+            "parsed_count": body.get("parsed_count"),
+            "published_count": published,
+            "trigger_cartao": trigger_cartao,
+        },
+        obs=f"CSV PIX {iso} | file={name} | published={published}",
+    )
+    return {
+        "reference_date": iso,
+        "parsed_count": body.get("parsed_count"),
+        "published_count": published,
+        "queue": body.get("queue"),
+        "sample_ids": body.get("sample_ids") or [],
+        "mensagem": (
+            f"PIX CSV {iso}: publicados={published}. "
+            "Depois extraia o cartão do mesmo dia."
+        ),
+    }
+
+
+async def extrair_cartao_dia(
+    data_ref: date,
+    *,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Força extração de cartão do dia sem solicitar PIX na Stone."""
+    ymd = data_ref.strftime("%Y%m%d")
+    iso = data_ref.strftime("%Y-%m-%d")
+    base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
+    url = f"{base}/cartao/conciliation"
+    user_id, login = _user_meta(user)
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        try:
+            resp = await client.post(url, params={"date": ymd, "force": "true"})
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"stone-extracao inacessível em {base}: {exc}."
+            ) from exc
+
+    if resp.status_code >= 400:
+        detail = resp.text[:800]
+        try:
+            detail = str(resp.json().get("detail") or detail)
+        except Exception:
+            pass
+        registrar_acao_log(
+            user_id=user_id,
+            login=login,
+            acao="extrair_cartao_erro",
+            depois={"reference_date": ymd, "error": detail},
+            obs=f"Cartão {ymd}: {detail[:300]}",
+        )
+        raise RuntimeError(f"stone-extracao cartão falhou: {detail}") from None
+
+    body = resp.json()
+    published = body.get("published_count")
+    registrar_acao_log(
+        user_id=user_id,
+        login=login,
+        acao="extrair_cartao",
+        depois={"reference_date": ymd, "published_count": published},
+        obs=f"Cartão {ymd} | published={published}",
+    )
+    return {
+        "reference_date": body.get("reference_date", ymd),
+        "parsed_count": body.get("parsed_count"),
+        "published_count": published,
+        "queue": body.get("queue"),
+        "mensagem": f"Cartão {iso}: publicados={published}.",
+        "totais_avisos": body.get("totais_avisos") or [],
+    }
+
+
 async def _reenfileirar_pendentes_do_dia(
     data_ref: date,
     *,

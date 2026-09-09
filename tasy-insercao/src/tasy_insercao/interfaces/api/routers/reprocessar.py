@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from tasy_insercao.application.use_cases.reprocessar import (
+    extrair_cartao_dia,
+    importar_pix_csv,
     reprocessar_dia,
     reprocessar_registro,
     reprocessar_selecionados,
@@ -62,6 +64,45 @@ async def api_reprocessar_dia(body: ReprocessarDiaBody, user: AdminUser):
     data_ref = _parse_ref_date(body.date)
     try:
         return await reprocessar_dia(data_ref, user=user)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/pix-csv")
+async def api_importar_pix_csv(
+    user: AdminUser,
+    date: str = Query(..., description="YYYY-MM-DD ou YYYYMMDD"),
+    trigger_cartao: bool = Query(False),
+    file: UploadFile = File(..., description="CSV PIX Stone"),
+):
+    """Admin: publica PIX a partir de CSV (dias que a Stone não reenvia via webhook)."""
+    data_ref = _parse_ref_date(date)
+    raw = await file.read()
+    if not raw or not raw.strip():
+        raise HTTPException(status_code=400, detail="Arquivo CSV vazio")
+    try:
+        return await importar_pix_csv(
+            data_ref,
+            file_bytes=raw,
+            filename=file.filename or "pix.csv",
+            content_type=file.content_type,
+            trigger_cartao=trigger_cartao,
+            user=user,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/cartao")
+async def api_extrair_cartao_dia(body: ReprocessarDiaBody, user: AdminUser):
+    """Admin: força extração de cartão do dia (sem solicitar PIX)."""
+    data_ref = _parse_ref_date(body.date)
+    try:
+        return await extrair_cartao_dia(data_ref, user=user)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
