@@ -257,7 +257,8 @@ tr.row-selected { background: var(--blue-soft); }
 }
 
 .btn.btn-sm { padding: 0.28rem 0.6rem; font-size: 0.8rem; }
-.btn:disabled { opacity: 0.6; cursor: wait; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn:disabled.btn-busy { cursor: wait; }
 
 .modal-backdrop {
   position: fixed;

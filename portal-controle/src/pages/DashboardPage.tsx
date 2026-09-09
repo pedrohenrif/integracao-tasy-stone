@@ -8,6 +8,12 @@ function money(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function dateFromFilename(name: string): string {
+  const m = name.match(/(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])/);
+  if (!m) return "";
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const [totais, setTotais] = useState<ResumoTotais>({});
@@ -147,8 +153,9 @@ export function DashboardPage() {
             </label>
             <button
               type="button"
-              className="btn btn-accent"
+              className={`btn btn-accent${busy ? " btn-busy" : ""}`}
               disabled={busy || !dia}
+              title={!dia ? "Selecione o dia" : busy ? "Aguarde…" : ""}
               onClick={() => void onExecutarDia()}
             >
               Extrair cartão + PIX do dia
@@ -161,28 +168,49 @@ export function DashboardPage() {
           <div className="reprocess-group">
             <strong>Retroativo — CSV PIX + cartão (um dia por vez)</strong>
             <label className="reprocess-date">
+              Dia do CSV
+              <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
+            </label>
+            <label className="reprocess-date">
               CSV PIX
               <input
                 type="file"
-                accept=".csv,text/csv,text/plain"
-                onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
+                accept=".csv,text/csv,text/plain,.xml"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setCsvFile(f);
+                  if (f) {
+                    const guessed = dateFromFilename(f.name);
+                    if (guessed) setDia(guessed);
+                  }
+                }}
               />
             </label>
             <button
               type="button"
-              className="btn"
+              className={`btn${busy ? " btn-busy" : ""}`}
               disabled={busy || !dia || !csvFile}
+              title={
+                !csvFile
+                  ? "Escolha o arquivo CSV"
+                  : !dia
+                    ? "Selecione o dia do lote"
+                    : busy
+                      ? "Aguarde…"
+                      : ""
+              }
               onClick={() => void onImportarPixCsv()}
             >
-              1) Importar PIX CSV
+              {busy ? "Importando…" : "1) Importar PIX CSV"}
             </button>
             <button
               type="button"
-              className="btn"
+              className={`btn${busy ? " btn-busy" : ""}`}
               disabled={busy || !dia}
+              title={!dia ? "Selecione o dia do lote" : busy ? "Aguarde…" : ""}
               onClick={() => void onExtrairCartao()}
             >
-              2) Extrair só cartão
+              {busy ? "Extraindo…" : "2) Extrair só cartão"}
             </button>
             <span className="muted small">
               Use quando a Stone não reenvia PIX (D-2+). Ordem: CSV do dia → esperar fila PIX
