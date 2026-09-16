@@ -504,9 +504,9 @@ class IntegrarTransacaoCartao:
             return dt_base
         if tipo_api == "pix":
             return dt_recebimento
-        if tipo_api == "prepaid_debit":
+        if tipo_api == "prepaid_credit":
             return dt_recebimento + timedelta(days=2)
-        if tipo_api == "debit_card":
+        if tipo_api in ("debit_card", "prepaid_debit"):
             return self.cal.add_working_days(dt_recebimento, 1)
         return dt_recebimento
 
@@ -528,7 +528,7 @@ class IntegrarTransacaoCartao:
         if nr_seq_bandeira is None:
             raise ValueError(
                 f"Mapeamento Tasy não encontrado para {tipo_api}/{bandeira}. "
-                "Cadastre em portal → Mapeamentos (Pré-pago ≠ Débito)."
+                "Cadastre em portal → Mapeamentos."
             )
 
         vl = to_float_money(tx.vl_transacao)
@@ -536,17 +536,20 @@ class IntegrarTransacaoCartao:
         ds_obs = f"Maquininha - {tx.nr_serie_maquininha} | ID stone - {tx.id_stone}"
         if sem_tesouraria:
             ds_obs = f"SEM_TESOURARIA | {ds_obs}"
+        orig = (tx.cd_tipo_transacao.value or "").lower()
         if tipo_api == "pix":
             ds_obs = f"PIX | {ds_obs}"
-        elif tipo_api == "prepaid_debit":
+        elif orig == "prepaid_debit":
+            ds_obs = f"PREPAGO_COMO_DEBITO | {ds_obs}"
+        elif orig == "prepaid_credit" or tipo_api == "prepaid_credit":
             ds_obs = f"PREPAGO | {ds_obs}"
         parcelada = tx.ie_transacao_parcelada or tx.qt_parcelas > 1
 
         if tipo_api == "credit_card":
             ie_tipo, nr_seq_trans_caixa, nr_seq_forma_pagto = "C", 72, 2
-        elif tipo_api == "prepaid_debit":
+        elif tipo_api == "prepaid_credit":
             ie_tipo, nr_seq_trans_caixa, nr_seq_forma_pagto = "C", 72, 2
-        elif is_debito_tasy(tipo_api):
+        elif is_debito_tasy(tipo_api) or tipo_api in ("debit_card", "prepaid_debit"):
             ie_tipo, nr_seq_trans_caixa, nr_seq_forma_pagto = "D", 73, 1
         else:
             ie_tipo, nr_seq_trans_caixa, nr_seq_forma_pagto = "D", 73, 1

@@ -47,6 +47,7 @@ from stone_extracao.infrastructure.stone.conciliation_client import (
 )
 from stone_extracao.infrastructure.stone.pix_client import PixFetchError, StonePixClient
 from stone_extracao.infrastructure.store.filtro_seriais import resolve_terminals
+from stone_extracao.infrastructure.store.pix_webhook_inbox import listar_hits, registrar_hit
 from stone_extracao.infrastructure.store.ultima_extracao import salvar_extracao
 from stone_extracao.interfaces.api.painel import router as painel_router
 
@@ -572,6 +573,12 @@ async def request_pix_extract(
     except PixFetchError as exc:
         logger.error("API PIX | request falhou | date=%s | %s", date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("API PIX | request 500 | date=%s", date)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao solicitar PIX: {type(exc).__name__}: {exc}",
+        ) from exc
 
     return _pix_request_response(result)
 
@@ -590,6 +597,12 @@ async def request_pix_extract_d1(request: Request):
     except PixFetchError as exc:
         logger.error("API PIX | d-1 falhou | date=%s | %s", reference_date, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("API PIX | d-1 500 | date=%s", reference_date)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao solicitar PIX: {type(exc).__name__}: {exc}",
+        ) from exc
     return _pix_request_response(result)
 
 
@@ -656,6 +669,44 @@ async def update_pix_webhook(body: PixWebhookRegisterBody):
     )
 
 
+def _webhook_client_meta(request: Request) -> dict[str, str | None]:
+    client = request.client.host if request.client else None
+    return {
+        "client_ip": client,
+        "forwarded_for": request.headers.get("x-forwarded-for"),
+        "content_type": request.headers.get("content-type"),
+        "user_agent": request.headers.get("user-agent"),
+    }
+
+
+@app.api_route("/pix/webhook", methods=["GET", "HEAD"])
+async def pix_webhook_probe(request: Request):
+    """
+    A Stone costuma testar a URL com GET/HEAD (timeout ~3s).
+    Sem isto o cadastro falha com 'Notification URL is not reachable' (405).
+    """
+    meta = _webhook_client_meta(request)
+    registrar_hit(
+        method=request.method,
+        path=str(request.url.path),
+        client_ip=meta["client_ip"],
+        forwarded_for=meta["forwarded_for"],
+        content_type=meta["content_type"],
+        body_len=0,
+        body_preview="",
+        event_type="probe",
+        status="ok",
+        note="GET/HEAD probe (cadastro/reachability Stone)",
+    )
+    return {"status": "ok", "message": "Webhook PIX ativo. Use POST para notificação."}
+
+
+@app.get("/pix/webhook/inbox")
+async def pix_webhook_inbox(limit: int = Query(default=20, ge=1, le=50)):
+    """Últimos hits no webhook — prova se a Stone chegou neste servidor."""
+    return listar_hits(limit=limit)
+
+
 @app.post("/pix/webhook", response_model=PixWebhookResponse)
 async def pix_webhook(
     request: Request,
@@ -669,12 +720,56 @@ async def pix_webhook(
     - type=pix + downloadUrl/url → 200 imediato + download/parse em background
     - CSV cru (legado/homolog) → processa síncrono
     """
+    meta = _webhook_client_meta(request)
+    body = await request.body()
+    preview = body[:400].decode("utf-8", errors="replace") if body else ""
+    payload_early = parse_webhook_payload(body) if body else None
+    event_early = (
+        str(payload_early.get("type") or "").strip().lower() if payload_early else None
+    )
+
     if settings.PIX_WEBHOOK_SECRET and x_stone_signature != settings.PIX_WEBHOOK_SECRET:
+        registrar_hit(
+            method="POST",
+            path="/pix/webhook",
+            client_ip=meta["client_ip"],
+            forwarded_for=meta["forwarded_for"],
+            content_type=meta["content_type"],
+            body_len=len(body or b""),
+            body_preview=preview,
+            event_type=event_early,
+            status="401",
+            note="assinatura inválida",
+        )
         raise HTTPException(status_code=401, detail="Assinatura do webhook inválida")
 
-    body = await request.body()
     if not body:
+        registrar_hit(
+            method="POST",
+            path="/pix/webhook",
+            client_ip=meta["client_ip"],
+            forwarded_for=meta["forwarded_for"],
+            content_type=meta["content_type"],
+            body_len=0,
+            body_preview="",
+            event_type=None,
+            status="400",
+            note="body vazio",
+        )
         raise HTTPException(status_code=400, detail="Body vazio")
+
+    registrar_hit(
+        method="POST",
+        path="/pix/webhook",
+        client_ip=meta["client_ip"],
+        forwarded_for=meta["forwarded_for"],
+        content_type=meta["content_type"],
+        body_len=len(body),
+        body_preview=preview,
+        event_type=event_early,
+        status="received",
+        note=meta.get("user_agent"),
+    )
 
     payload = parse_webhook_payload(body)
     if payload is not None:

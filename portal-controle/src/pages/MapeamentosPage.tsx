@@ -91,7 +91,7 @@ export function MapeamentosPage() {
       <header className="page-head">
         <h1>Cadastro — Mapeamentos</h1>
         <p className="muted">
-          Tipo + bandeira → id Tasy. Use <strong>Pre_pago (6)</strong> para pré-pago — não use Débito.
+          Tipo + bandeira → id Tasy. Pré-pago débito usa <strong>Débito</strong>. Pré-pago crédito continua em <strong>Pre_pago (6)</strong> (bandeiras 25/27/28).
         </p>
       </header>
 

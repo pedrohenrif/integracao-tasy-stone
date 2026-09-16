@@ -33,6 +33,7 @@ const BLOCKS: HelpBlock[] = [
     body: [
       "Lista os registros gravados no Postgres (staging).",
       "Ao abrir, carrega só o dia de ontem (paginado). Amplie as datas nos filtros para ver mais.",
+      "Marque um ou mais tipos, status, bandeiras e caixas (ex.: crédito + PIX). Sem marca = todos.",
       "Use os filtros: data, caixa, status, tipo (crédito/débito/PIX), bandeira, ID Stone, etc.",
       "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria, Reintegrar (9 — Oracle limpo após falha no FECHAR; reprocessar do zero).",
       "Serve para conferir se um movimento do dia entrou e com qual valor/caixa.",
@@ -53,6 +54,7 @@ const BLOCKS: HelpBlock[] = [
     title: "Maquininhas",
     body: [
       "Cadastro do serial da máquina Stone ligado a um caixa do Tasy e à transação financeira.",
+      "Use a busca e o filtro de caixa para achar um terminal. Serial já cadastrado não pode ser incluído de novo — o portal avisa e abre a edição.",
       "Se o serial não existir aqui, a integração costuma cair em erro ou Sem Tesouraria.",
       "Quando uma máquina nova entrar em uso, cadastre o serial assim que possível.",
     ],
@@ -63,6 +65,7 @@ const BLOCKS: HelpBlock[] = [
     body: [
       "Relaciona tipo/bandeira da Stone com o código de cartão/bandeira no Tasy.",
       "PIX e alguns débitos podem usar mapeamento sem bandeira (conforme regras do hospital).",
+      "Débito pré-pago da Stone entra no Tasy como débito. Crédito pré-pago continua nas bandeiras 25/27/28.",
       "Só altere se souber o código correto no Tasy — mapeamento errado gera lançamento incorreto.",
     ],
   },

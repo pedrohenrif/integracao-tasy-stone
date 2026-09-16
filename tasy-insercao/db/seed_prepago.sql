@@ -1,5 +1,5 @@
--- Pré-pago → cd_cartao_bandeira_tasy (Cotolengo)
--- tipo 6 = Pre_pago | bandeira: 1=Visa 2=Mastercard 3=Elo
+-- Pré-pago crédito (AccountType 4) → tipo 6 Pre_pago (Tasy 25/27/28).
+-- Débito pré-pago (AccountType 3) NÃO usa este mapeamento — cai em Débito (tipo 2).
 -- Rode só este arquivo no Postgres de staging, ou via:
 --   poetry run python -m tasy_insercao.db seed --file db/seed_prepago.sql
 

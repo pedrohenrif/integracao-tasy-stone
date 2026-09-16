@@ -9,12 +9,13 @@ from xml.etree import ElementTree as ET
 from stone_extracao.domain.cartao.models import TipoTransacaoCartao, TransacaoCartao
 
 # AccountType Stone Conciliation Layout 2.2
-# 1=débito | 2=crédito | 3/4=pré-pago (prepaid_debit)
+# https://conciliacao.stone.com.br/reference/accounttype
+# 1=débito | 2=crédito | 3=pré-pago débito | 4=pré-pago crédito
 _ACCOUNT_TYPE_MAP: dict[int, TipoTransacaoCartao] = {
     1: TipoTransacaoCartao.DEBIT_CARD,
     2: TipoTransacaoCartao.CREDIT_CARD,
     3: TipoTransacaoCartao.PREPAID_DEBIT,
-    4: TipoTransacaoCartao.PREPAID_DEBIT,
+    4: TipoTransacaoCartao.PREPAID_CREDIT,
 }
 
 

@@ -11,6 +11,7 @@ class TipoTransacaoCartao(str, Enum):
     DEBIT_CARD = "debit_card"
     CREDIT_CARD = "credit_card"
     PREPAID_DEBIT = "prepaid_debit"
+    PREPAID_CREDIT = "prepaid_credit"
     UNKNOWN = "unknown"
 
 

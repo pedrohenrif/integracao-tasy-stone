@@ -36,7 +36,7 @@ TIPO_LOCAL_ID: dict[str, int] = {
     "credit_card": 1,
     "debit_card": 2,
     "pix": 3,
-    "prepaid_debit": 6,  # Pré-pago (AccountType 3/4) — mapeamento próprio no Tasy
+    "prepaid_credit": 6,  # AccountType 4 — bandeiras Tasy 25/27/28 (crédito pré-pago)
 }
 
 
@@ -64,22 +64,22 @@ def map_stone_brand(brand_id: str | None) -> str:
 
 def map_tipo_para_api(tipo: str) -> str:
     """
-    Normaliza tipo para regras de insert / mapeamento Tasy.
-    prepaid_debit permanece pré-pago (não vira debit_card).
+    AccountType 3 (pré-pago débito) → débito normal.
+    AccountType 4 (pré-pago crédito) permanece Pre_pago (bandeiras 25/27/28).
     """
     if tipo == "credit_card":
         return "credit_card"
-    if tipo == "debit_card":
+    if tipo in ("prepaid_credit", "PREPAID_CREDIT"):
+        return "prepaid_credit"
+    if tipo in ("debit_card", "prepaid_debit", "PREPAID_DEBIT"):
         return "debit_card"
-    if tipo in ("prepaid_debit", "PREPAID_DEBIT"):
-        return "prepaid_debit"
     if tipo == "pix":
         return "pix"
     return tipo
 
 
 def is_debito_tasy(tipo_api: str) -> bool:
-    """Débito e PIX usam ie_tipo_cartao=D. Pré-pago Cotolengo usa C (crédito pré-pago)."""
+    """Débito, PIX e débito pré-pago (já normalizado) usam ie_tipo_cartao=D."""
     return tipo_api in ("debit_card", "pix")
 
 

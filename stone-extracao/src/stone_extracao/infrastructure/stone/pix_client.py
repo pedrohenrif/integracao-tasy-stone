@@ -98,87 +98,93 @@ class StonePixClient:
 
         last_body = ""
         last_status = 0
-        async with httpx.AsyncClient(timeout=90.0, follow_redirects=False) as client:
-            response = None
-            for label, payload in attempts:
-                if payload is None:
-                    response = await client.post(url, headers=headers)
-                else:
-                    response = await client.post(url, headers=headers, json=payload)
-                last_status = response.status_code
-                last_body = (response.text or "")[:500]
-                logger.info(
-                    "PIX request | tentativa=%s | http=%s | body=%s",
-                    label,
-                    last_status,
-                    last_body[:200].replace("\n", " "),
-                )
-                if response.is_redirect:
-                    loc = response.headers.get("location") or ""
+        try:
+            async with httpx.AsyncClient(timeout=90.0, follow_redirects=False) as client:
+                response = None
+                for label, payload in attempts:
+                    if payload is None:
+                        response = await client.post(url, headers=headers)
+                    else:
+                        response = await client.post(url, headers=headers, json=payload)
+                    last_status = response.status_code
+                    last_body = (response.text or "")[:500]
+                    logger.info(
+                        "PIX request | tentativa=%s | http=%s | body=%s",
+                        label,
+                        last_status,
+                        last_body[:200].replace("\n", " "),
+                    )
+                    if response.is_redirect:
+                        loc = response.headers.get("location") or ""
+                        raise PixFetchError(
+                            f"Stone PIX API {response.status_code} redirect inesperado "
+                            f"(location={loc[:120]}). Não seguimos redirect para preservar auth."
+                        )
+                    if response.status_code in (200, 202, 204):
+                        break
+                    if "ClientIdentifier" not in last_body and "ClientId" not in last_body:
+                        break
+                assert response is not None
+                if response.status_code not in (200, 202, 204):
+                    logger.error(
+                        "PIX request | falha Stone | date=%s | http=%s | body=%s",
+                        reference_date,
+                        last_status,
+                        last_body,
+                    )
+                    hint = ""
+                    if "ClientIdentifier" in last_body or "ClientId" in last_body:
+                        hint = (
+                            " | A chave sk_ autentica cartão, mas o endpoint PIX está exigindo "
+                            "ClientId/AccountId (fluxo de conciliadora). "
+                            "Abra chamado na Stone (meajuda@stone.com.br) pedindo liberação de "
+                            "conciliação PIX para Cliente Stone nesta chave/CNPJ "
+                            f"{merchant} (StoneCode {settings.STONE_MERCHANT_ID}). "
+                            "Enquanto isso, use POST /pix/conciliation/dev com sample."
+                        )
                     raise PixFetchError(
-                        f"Stone PIX API {response.status_code} redirect inesperado "
-                        f"(location={loc[:120]}). Não seguimos redirect para preservar auth."
+                        f"Stone PIX API {last_status}: {last_body[:350]}{hint}"
                     )
-                if response.status_code in (200, 202, 204):
-                    break
-                # Outro erro (403/401/404…) — não adianta tentar body diferente
-                if "ClientIdentifier" not in last_body and "ClientId" not in last_body:
-                    break
-            assert response is not None
-            if response.status_code not in (200, 202, 204):
-                logger.error(
-                    "PIX request | falha Stone | date=%s | http=%s | body=%s",
+
+                raw = decode_stone_body(response.content, response.headers) if response.content else b""
+                content_type = (response.headers.get("content-type") or "").lower()
+                body_preview = ""
+                if raw:
+                    try:
+                        body_preview = raw[:200].decode("utf-8", errors="replace")
+                    except Exception:
+                        body_preview = "<binary>"
+
+                logger.info(
+                    "PIX request | aceito | date=%s | http=%s | content_type=%s | "
+                    "has_body=%s | body_bytes=%s | preview=%s",
                     reference_date,
-                    last_status,
-                    last_body,
+                    response.status_code,
+                    content_type or "-",
+                    bool(raw),
+                    len(raw),
+                    body_preview[:160].replace("\n", " "),
                 )
-                hint = ""
-                if "ClientIdentifier" in last_body or "ClientId" in last_body:
-                    hint = (
-                        " | A chave sk_ autentica cartão, mas o endpoint PIX está exigindo "
-                        "ClientId/AccountId (fluxo de conciliadora). "
-                        "Abra chamado na Stone (meajuda@stone.com.br) pedindo liberação de "
-                        "conciliação PIX para Cliente Stone nesta chave/CNPJ "
-                        f"{merchant} (StoneCode {settings.STONE_MERCHANT_ID}). "
-                        "Enquanto isso, use POST /pix/conciliation/dev com sample."
-                    )
-                raise PixFetchError(
-                    f"Stone PIX API {last_status}: {last_body[:350]}{hint}"
-                )
-
-            raw = decode_stone_body(response.content, response.headers) if response.content else b""
-            content_type = (response.headers.get("content-type") or "").lower()
-            body_preview = ""
-            if raw:
-                try:
-                    body_preview = raw[:200].decode("utf-8", errors="replace")
-                except Exception:
-                    body_preview = "<binary>"
-
-            logger.info(
-                "PIX request | aceito | date=%s | http=%s | content_type=%s | "
-                "has_body=%s | body_bytes=%s | preview=%s",
-                reference_date,
-                response.status_code,
-                content_type or "-",
-                bool(raw),
-                len(raw),
-                body_preview[:160].replace("\n", " "),
-            )
-            return {
-                "status": "accepted" if response.status_code in (202, 204) else "ok",
-                "http_status": response.status_code,
-                "source": "stone_api",
-                "reference_date": reference_date,
-                "content_type": content_type,
-                "has_body": bool(raw),
-                "body_preview": body_preview,
-                "message": (
-                    "Extrato solicitado (assíncrono). Aguarde notificação em POST /pix/webhook "
-                    "com downloadUrl/url e o download do CSV."
-                ),
-                "raw_bytes": raw,
-            }
+                return {
+                    "status": "accepted" if response.status_code in (202, 204) else "ok",
+                    "http_status": response.status_code,
+                    "source": "stone_api",
+                    "reference_date": reference_date,
+                    "content_type": content_type,
+                    "has_body": bool(raw),
+                    "body_preview": body_preview,
+                    "message": (
+                        "Extrato solicitado (assíncrono). Aguarde notificação em POST /pix/webhook "
+                        "com downloadUrl/url e o download do CSV."
+                    ),
+                    "raw_bytes": raw,
+                }
+        except PixFetchError:
+            raise
+        except httpx.HTTPError as exc:
+            raise PixFetchError(
+                f"Falha de rede ao solicitar PIX Stone ({type(exc).__name__}): {exc}"
+            ) from exc
 
     async def register_webhook(self, webhook_url: str) -> dict:
         """POST /v2/webhook — cadastra URL HTTPS (Stone envia validation_notification)."""

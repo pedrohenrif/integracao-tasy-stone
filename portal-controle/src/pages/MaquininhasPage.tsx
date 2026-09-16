@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { maquininhasApi, saveMaquininhaApi, type Maquininha } from "../api/client";
 
 const empty = {
@@ -9,6 +9,10 @@ const empty = {
   ie_status: "A",
 };
 
+function normSerial(s: string) {
+  return s.trim().toUpperCase();
+}
+
 export function MaquininhasPage() {
   const [items, setItems] = useState<Maquininha[]>([]);
   const [pendentes, setPendentes] = useState<string[]>([]);
@@ -17,6 +21,9 @@ export function MaquininhasPage() {
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [busca, setBusca] = useState("");
+  const [filtroCaixa, setFiltroCaixa] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
 
   async function load() {
     const data = await maquininhasApi();
@@ -29,6 +36,32 @@ export function MaquininhasPage() {
     load().catch((e) => setError(e.message));
   }, []);
 
+  const existentePeloSerial = useMemo(() => {
+    const serial = normSerial(form.nr_serie_maquininha);
+    if (!serial) return null;
+    return items.find((m) => normSerial(m.nr_serie_maquininha) === serial) ?? null;
+  }, [form.nr_serie_maquininha, items]);
+
+  const filtradas = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return items.filter((m) => {
+      if (filtroCaixa && String(m.cd_caixa) !== filtroCaixa) return false;
+      if (filtroStatus && (m.ie_status || "") !== filtroStatus) return false;
+      if (!q) return true;
+      const blob = [
+        m.nr_serie_maquininha,
+        m.ds_maquininha,
+        String(m.cd_caixa),
+        m.ds_caixa,
+        String(m.cd_transacao_financeira),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(q);
+    });
+  }, [items, busca, filtroCaixa, filtroStatus]);
+
   function edit(row: Maquininha) {
     setEditing(true);
     setForm({
@@ -40,21 +73,62 @@ export function MaquininhasPage() {
     });
     setMsg("");
     setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function novoComSerial(serial: string) {
+    const ja = items.find((m) => normSerial(m.nr_serie_maquininha) === normSerial(serial));
+    if (ja) {
+      edit(ja);
+      setError(
+        `Serial ${serial} já está cadastrado (caixa ${ja.cd_caixa}). Abrimos a edição — não cadastre de novo.`,
+      );
+      return;
+    }
     setEditing(false);
     setForm({ ...empty, nr_serie_maquininha: serial, ie_status: "A" });
     setMsg(`Preencha caixa e transação financeira para ${serial}`);
+    setError("");
+  }
+
+  function onSerialChange(value: string) {
+    setForm({ ...form, nr_serie_maquininha: value });
+    if (editing) return;
+    const ja = items.find((m) => normSerial(m.nr_serie_maquininha) === normSerial(value));
+    if (ja) {
+      setError(
+        `Este serial já existe no caixa ${ja.cd_caixa} (${ja.ds_caixa || "—"}${
+          ja.ds_maquininha ? ` · ${ja.ds_maquininha}` : ""
+        }). Não cadastre de novo — use Editar.`,
+      );
+    } else if (error.startsWith("Este serial") || error.startsWith("Serial ")) {
+      setError("");
+    }
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setMsg("");
+    const serial = form.nr_serie_maquininha.trim();
+    const ja = items.find((m) => normSerial(m.nr_serie_maquininha) === normSerial(serial));
+    if (!editing && ja) {
+      const ok = window.confirm(
+        `A maquininha ${ja.nr_serie_maquininha} já está cadastrada no caixa ${ja.cd_caixa}` +
+          `${ja.ds_caixa ? ` (${ja.ds_caixa})` : ""}.\n\n` +
+          `Não é possível cadastrar o mesmo serial duas vezes.\n` +
+          `OK = abrir o cadastro existente para editar.\nCancelar = não salvar.`,
+      );
+      if (ok) edit(ja);
+      else
+        setError(
+          `Serial já cadastrado no caixa ${ja.cd_caixa}. Use Editar em vez de cadastrar de novo.`,
+        );
+      return;
+    }
     try {
       await saveMaquininhaApi({
-        nr_serie_maquininha: form.nr_serie_maquininha.trim(),
+        nr_serie_maquininha: serial,
         cd_caixa: Number(form.cd_caixa),
         cd_transacao_financeira: Number(form.cd_transacao_financeira),
         ds_maquininha: form.ds_maquininha || undefined,
@@ -73,7 +147,7 @@ export function MaquininhasPage() {
     <div>
       <header className="page-head">
         <h1>Cadastro — Maquininhas</h1>
-        <p className="muted">Incluir / editar terminais (resolve erro “não cadastrada”)</p>
+        <p className="muted">Incluir / editar terminais. Busque pelo serial ou filtre pelo caixa.</p>
       </header>
 
       {pendentes.length > 0 && (
@@ -97,8 +171,9 @@ export function MaquininhasPage() {
             <input
               required
               value={form.nr_serie_maquininha}
-              onChange={(e) => setForm({ ...form, nr_serie_maquininha: e.target.value })}
+              onChange={(e) => onSerialChange(e.target.value)}
               disabled={editing}
+              placeholder="Ex.: PB09231X75906"
             />
           </label>
           <label>
@@ -140,9 +215,18 @@ export function MaquininhasPage() {
             </select>
           </label>
         </div>
+        {!editing && existentePeloSerial && (
+          <p className="warn-msg">
+            Serial já cadastrado no caixa {existentePeloSerial.cd_caixa}
+            {existentePeloSerial.ds_caixa ? ` (${existentePeloSerial.ds_caixa})` : ""}.{" "}
+            <button type="button" className="linkish" onClick={() => edit(existentePeloSerial)}>
+              Abrir cadastro existente
+            </button>
+          </p>
+        )}
         <div className="filters-actions">
           <button type="submit" className="btn">
-            Salvar
+            {editing ? "Salvar alteração" : "Cadastrar"}
           </button>
           {editing && (
             <button
@@ -151,6 +235,7 @@ export function MaquininhasPage() {
               onClick={() => {
                 setEditing(false);
                 setForm(empty);
+                setError("");
               }}
             >
               Cancelar
@@ -160,6 +245,39 @@ export function MaquininhasPage() {
         {msg && <p className="ok-msg">{msg}</p>}
         {error && <p className="error">{error}</p>}
       </form>
+
+      <div className="maq-toolbar">
+        <label>
+          Buscar
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Serial, nome ou transação…"
+          />
+        </label>
+        <label>
+          Caixa
+          <select value={filtroCaixa} onChange={(e) => setFiltroCaixa(e.target.value)}>
+            <option value="">Todos</option>
+            {caixas.map((c) => (
+              <option key={c.cd_caixa} value={c.cd_caixa}>
+                {c.cd_caixa} — {c.ds_caixa}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status
+          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="A">Ativas</option>
+            <option value="I">Inativas</option>
+          </select>
+        </label>
+        <span className="muted small maq-count">
+          {filtradas.length} de {items.length}
+        </span>
+      </div>
 
       <div className="table-wrap">
         <table>
@@ -174,27 +292,42 @@ export function MaquininhasPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((m) => (
-              <tr key={m.nr_serie_maquininha}>
-                <td>
-                  <code>{m.nr_serie_maquininha}</code>
-                </td>
-                <td>
-                  {m.cd_caixa}
-                  <div className="muted small">{m.ds_caixa}</div>
-                </td>
-                <td>{m.cd_transacao_financeira}</td>
-                <td>{m.ds_maquininha || "-"}</td>
-                <td>
-                  <span className={`badge ${m.ie_status === "A" ? "s5" : "s7"}`}>{m.ie_status}</span>
-                </td>
-                <td>
-                  <button type="button" className="btn ghost" onClick={() => edit(m)}>
-                    Editar
-                  </button>
+            {filtradas.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">
+                  Nenhuma maquininha neste filtro. Limpe a busca/caixa ou cadastre uma nova.
                 </td>
               </tr>
-            ))}
+            ) : (
+              filtradas.map((m) => (
+                <tr
+                  key={m.nr_serie_maquininha}
+                  className={
+                    existentePeloSerial?.nr_serie_maquininha === m.nr_serie_maquininha
+                      ? "row-selected"
+                      : undefined
+                  }
+                >
+                  <td>
+                    <code>{m.nr_serie_maquininha}</code>
+                  </td>
+                  <td>
+                    {m.cd_caixa}
+                    <div className="muted small">{m.ds_caixa}</div>
+                  </td>
+                  <td>{m.cd_transacao_financeira}</td>
+                  <td>{m.ds_maquininha || "-"}</td>
+                  <td>
+                    <span className={`badge ${m.ie_status === "A" ? "s5" : "s7"}`}>{m.ie_status}</span>
+                  </td>
+                  <td>
+                    <button type="button" className="btn ghost" onClick={() => edit(m)}>
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

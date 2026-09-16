@@ -15,19 +15,33 @@ from tasy_insercao.infrastructure.config.settings import settings
 class FiltrosPainel:
     data_de: date | None = None
     data_ate: date | None = None
-    cd_caixa: int | None = None
-    cd_status: int | None = None
-    cd_tipo_transacao: str | None = None
+    cd_caixa: int | str | None = None  # um valor ou "48,41"
+    cd_status: int | str | None = None  # um valor ou "5,7"
+    cd_tipo_transacao: str | None = None  # um valor ou "credit_card,pix"
     id_stone: str | None = None
     nr_serie: str | None = None
     cd_autorizacao: str | None = None
-    cd_bandeira: str | None = None
+    cd_bandeira: str | None = None  # um valor ou "visa,elo"
     ie_internacional: str | None = None  # S | N
     vl_min: Decimal | None = None
     vl_max: Decimal | None = None
     obs: str | None = None
     limit: int = 200
     offset: int = 0
+
+
+def parse_csv_tokens(raw: str | int | None) -> list[str]:
+    if raw is None:
+        return []
+    return [p.strip().lower() for p in str(raw).split(",") if p.strip()]
+
+
+def parse_csv_ints(raw: str | int | None) -> list[int]:
+    out: list[int] = []
+    for token in parse_csv_tokens(raw):
+        if token.lstrip("-").isdigit():
+            out.append(int(token))
+    return out
 
 
 def _connect() -> psycopg.Connection:
@@ -46,23 +60,35 @@ def _where(f: FiltrosPainel) -> tuple[str, dict[str, Any]]:
     if f.data_ate is not None:
         clauses.append("r.dt_movimentacao < %(data_ate)s + INTERVAL '1 day'")
         params["data_ate"] = f.data_ate
-    if f.cd_caixa is not None:
+    caixas = parse_csv_ints(f.cd_caixa)
+    if len(caixas) == 1:
         clauses.append("r.cd_caixa = %(cd_caixa)s")
-        params["cd_caixa"] = f.cd_caixa
-    if f.cd_status is not None:
+        params["cd_caixa"] = caixas[0]
+    elif len(caixas) > 1:
+        clauses.append("r.cd_caixa = ANY(%(cd_caixas)s)")
+        params["cd_caixas"] = caixas
+    status_ids = parse_csv_ints(f.cd_status)
+    if len(status_ids) == 1:
         clauses.append("r.cd_status = %(cd_status)s")
-        params["cd_status"] = f.cd_status
-    if f.cd_tipo_transacao:
-        tipo = f.cd_tipo_transacao.strip().lower()
-        if tipo == "pix":
-            # %% = literal % no psycopg3 (senão %p de %pix% vira placeholder inválido)
-            clauses.append(
+        params["cd_status"] = status_ids[0]
+    elif len(status_ids) > 1:
+        clauses.append("r.cd_status = ANY(%(cd_statuses)s)")
+        params["cd_statuses"] = status_ids
+    tipos = parse_csv_tokens(f.cd_tipo_transacao)
+    if tipos:
+        tipo_parts: list[str] = []
+        outros = [t for t in tipos if t != "pix"]
+        if outros:
+            tipo_parts.append("LOWER(COALESCE(r.cd_tipo_transacao, '')) = ANY(%(tipos)s)")
+            params["tipos"] = outros
+        if "pix" in tipos:
+            # %% = literal % no psycopg3
+            tipo_parts.append(
                 "(LOWER(COALESCE(r.cd_tipo_transacao, '')) = 'pix' "
                 "OR LOWER(COALESCE(r.ds_obs_processo, '')) LIKE '%%pix%%')"
             )
-        else:
-            clauses.append("LOWER(COALESCE(r.cd_tipo_transacao, '')) = %(tipo)s")
-            params["tipo"] = tipo
+        if tipo_parts:
+            clauses.append("(" + " OR ".join(tipo_parts) + ")")
     if f.id_stone:
         clauses.append("r.id_stone ILIKE %(id_stone)s")
         params["id_stone"] = f"%{f.id_stone.strip()}%"
@@ -72,14 +98,25 @@ def _where(f: FiltrosPainel) -> tuple[str, dict[str, Any]]:
     if f.cd_autorizacao:
         clauses.append("r.cd_autorizacao ILIKE %(cd_autorizacao)s")
         params["cd_autorizacao"] = f"%{f.cd_autorizacao.strip()}%"
-    if f.cd_bandeira:
-        bandeira = f.cd_bandeira.strip().lower()
-        # Transição: BrandId 171 era gravado como "ticket" (bug); Elo filtra os dois
-        if bandeira == "elo":
-            clauses.append("LOWER(COALESCE(r.cd_bandeira, '')) IN ('elo', 'ticket')")
-        else:
-            clauses.append("LOWER(COALESCE(r.cd_bandeira, '')) LIKE %(cd_bandeira)s")
-            params["cd_bandeira"] = f"%{bandeira}%"
+    bandeiras = parse_csv_tokens(f.cd_bandeira)
+    if bandeiras:
+        band_parts: list[str] = []
+        if "elo" in bandeiras:
+            band_parts.append("LOWER(COALESCE(r.cd_bandeira, '')) IN ('elo', 'ticket')")
+        outras = [b for b in bandeiras if b != "elo"]
+        if outras:
+            band_parts.append(
+                "("
+                + " OR ".join(
+                    f"LOWER(COALESCE(r.cd_bandeira, '')) LIKE %(bandeira_{i})s"
+                    for i, _ in enumerate(outras)
+                )
+                + ")"
+            )
+            for i, band in enumerate(outras):
+                params[f"bandeira_{i}"] = f"%{band}%"
+        if band_parts:
+            clauses.append("(" + " OR ".join(band_parts) + ")")
     if f.ie_internacional:
         intl = f.ie_internacional.strip().upper()
         if intl in ("S", "N"):

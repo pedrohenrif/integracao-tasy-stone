@@ -33,15 +33,6 @@ def _parse_decimal(value: str | None) -> Decimal | None:
         return None
 
 
-def _parse_int(value: str | int | None) -> int | None:
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _filtros_from_query(
     data_de: str | None,
     data_ate: str | None,
@@ -62,8 +53,8 @@ def _filtros_from_query(
     return FiltrosPainel(
         data_de=_parse_date(data_de),
         data_ate=_parse_date(data_ate),
-        cd_caixa=_parse_int(cd_caixa),
-        cd_status=_parse_int(cd_status),
+        cd_caixa=cd_caixa if cd_caixa not in (None, "") else None,
+        cd_status=cd_status if cd_status not in (None, "") else None,
         cd_tipo_transacao=tipo or None,
         id_stone=id_stone or None,
         nr_serie=nr_serie or None,

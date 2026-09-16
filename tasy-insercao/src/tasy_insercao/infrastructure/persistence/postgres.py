@@ -163,7 +163,7 @@ class StagingPostgresRepository:
             "cd_autorizacao": tx.cd_autorizacao,
             "vl_transacao": to_float_money(tx.vl_transacao),
             "id_stone": tx.id_stone,
-            # Mantém o tipo original da Stone (prepaid_debit ≠ debit_card no staging/portal)
+            # Staging guarda o tipo Stone; débito pré-pago vira débito no Tasy; crédito pré-pago fica Pre_pago.
             "cd_tipo_transacao": tx.cd_tipo_transacao.value,
             "cd_bandeira": (map_stone_brand(tx.cd_bandeira) if tx.cd_bandeira else None),
             "qt_parcelas": tx.qt_parcelas,

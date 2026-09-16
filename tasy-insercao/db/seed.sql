@@ -51,10 +51,10 @@ INSERT INTO mapeamento_transacoes_tasy (
     (9,  12, 1, 5),    -- Credito American Express
     (10,  9, 1, 6),    -- Credito Hipercard → Tasy 9
     -- Ticket (bandeira local 7): cadastrar no portal quando o hospital informar o ID Tasy
-    -- Pré-pago (tipo 6) — códigos Tasy Cotolengo
-    (20, 27, 6, 1),    -- Pre_pago Visa (crédito pré-pago) → 27
-    (21, 25, 6, 2),    -- Pre_pago Mastercard (crédito pré-pago) → 25
-    (22, 28, 6, 3)     -- Pre_pago Elo (crédito pré-pago) → 28
+    -- Pré-pago legado (tipo 6) — insert Tasy usa Débito (tipo 2)
+    (20, 27, 6, 1),    -- legado: Visa crédito pré-pago Tasy 27
+    (21, 25, 6, 2),    -- legado: Master crédito pré-pago Tasy 25
+    (22, 28, 6, 3)     -- legado: Elo crédito pré-pago Tasy 28
 ON CONFLICT (nr_sequencia) DO UPDATE SET
     cd_cartao_bandeira_tasy = EXCLUDED.cd_cartao_bandeira_tasy,
     cd_tipo_transacao = EXCLUDED.cd_tipo_transacao,
@@ -113,7 +113,7 @@ INSERT INTO maquininha_stone (
     (28, 'PB09218373216', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
     (29, 'PB09237272550', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
     (30, 'PB4M258670984', 13, 'Tmkt',                           'A', NOW(), 272),  -- PROVISÓRIO trans_fin
-    (31, 'PB09231X75906', 16, 'Financeiro',                     'A', NOW(), 274),  -- PROVISÓRIO caixa/trans_fin
+    (31, 'PB09231X75906', 41, 'MLO',                            'A', NOW(), 700),
     -- Homolog anterior (ainda no parque)
     (23, 'PB0921B977799', 43, 'Mix 2',                          'A', '2025-12-08 00:11:07.657585+00', 935),
     -- Churrasco (inativas)
