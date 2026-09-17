@@ -26,9 +26,35 @@ def test_idempotente_status_5():
     staging = MagicMock()
     tasy = MagicMock()
     staging.get_by_id_stone.return_value = (99, StatusIntegracao.INTEGRADO.value, "ok")
+    tasy.exists_movto_by_id_stone.return_value = True
+    tasy.ensure_documento_por_id_stone.return_value = False
     result = IntegrarTransacaoCartao(staging, tasy).execute(_tx())
     assert result.status == StatusIntegracao.INTEGRADO
-    tasy.exists_movto_by_id_stone.assert_not_called()
+    tasy.inserir_movto_cartao.assert_not_called()
+
+
+def test_reintegra_quando_movto_tasy_cancelado():
+    """PG INTEGRADO + Oracle sem movto ativo (DT_CANCELAMENTO) → reinsere."""
+    staging = MagicMock()
+    tasy = MagicMock()
+    staging.get_by_id_stone.return_value = (99, StatusIntegracao.INTEGRADO.value, "ok")
+    tasy.exists_movto_by_id_stone.return_value = False
+    staging.find_maquininha_config.return_value = {
+        "cd_caixa": 15,
+        "cd_transacao_financeira": 271,
+    }
+    staging.ensure_registro.return_value = 99
+    staging.get_bandeira_tasy.return_value = 21
+    tasy.ensure_caixa_saldo_diario.return_value = 50
+    tasy.ensure_caixa_receb_aberto.return_value = 88
+    tasy.inserir_movto_cartao.return_value = 77
+    tasy.upsert_documento_agregado.return_value = 7.0
+
+    result = IntegrarTransacaoCartao(staging, tasy).execute(_tx())
+
+    assert result.status == StatusIntegracao.INTEGRADO
+    tasy.inserir_movto_cartao.assert_called_once()
+    tasy.ensure_caixa_receb_aberto.assert_called_once()
 
 
 def test_retryable_connection_error():

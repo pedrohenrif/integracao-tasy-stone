@@ -33,7 +33,9 @@ class IntegrarTransacaoCartao:
     no mesmo caixa_receb. FECHAR apos quiet period sem novo cartao/PIX nesse recebimento.
     Sem maquininha ativa / fora do piloto: status IGNORADO (sem Oracle), salvo
     SEM_CAIXA_POLICY=insert (legado Sem Tesouraria).
-    Idempotente por id_stone (PG status=5/8/10 ou movto no Oracle).
+    Idempotente por id_stone: PG status 5/8/10 só conta se ainda houver
+    movto ativo no Oracle (DT_CANCELAMENTO IS NULL). Movto estornado no Tasy
+    permite reinserir no mesmo id_stone.
     """
 
     def __init__(self, staging: StagingRepositoryPort, tasy: TasyRepositoryPort) -> None:
@@ -49,7 +51,9 @@ class IntegrarTransacaoCartao:
         )
 
         existente = self.staging.get_by_id_stone(tx.id_stone)
-        if existente and existente[1] == StatusIntegracao.INTEGRADO.value:
+        movto_ativo = self.tasy.exists_movto_by_id_stone(tx.id_stone)
+
+        if existente and existente[1] == StatusIntegracao.INTEGRADO.value and movto_ativo:
             # Corrige lote de ontem: status 5 no PG mas documento ausente no Tasy
             ensure_doc = getattr(self.tasy, "ensure_documento_por_id_stone", None)
             if ensure_doc is not None:
@@ -79,7 +83,7 @@ class IntegrarTransacaoCartao:
                 retryable=False,
                 nr_sequencia_pg=existente[0],
             )
-        if existente and existente[1] == StatusIntegracao.SEM_TESOURARIA.value:
+        if existente and existente[1] == StatusIntegracao.SEM_TESOURARIA.value and movto_ativo:
             return ResultadoIntegracao(
                 id_stone=tx.id_stone,
                 status=StatusIntegracao.SEM_TESOURARIA,
@@ -96,16 +100,27 @@ class IntegrarTransacaoCartao:
                 nr_sequencia_pg=existente[0],
             )
 
-        # Status 9: se ainda há movto no Oracle → só FECHAR; se já foi limpo → reintegra do zero
+        if existente and existente[1] in (
+            StatusIntegracao.INTEGRADO.value,
+            StatusIntegracao.SEM_TESOURARIA.value,
+        ) and not movto_ativo:
+            logger.info(
+                "Staging %s sem movto ativo no Tasy (cancelado/estornado) | "
+                "reintegrando | id_stone=%s",
+                existente[1],
+                tx.id_stone,
+            )
+
+        # Status 9: se ainda há movto ativo no Oracle → só FECHAR; senão reintegra
         if existente and existente[1] == StatusIntegracao.CONFIRMACAO_PENDENTE.value:
-            if self.tasy.exists_movto_by_id_stone(tx.id_stone):
+            if movto_ativo:
                 return self._confirmar_recebimento_existente(tx, nr_seq_pg=existente[0])
             logger.info(
                 "Status 9 sem movto Oracle | reintegrando do zero | id_stone=%s",
                 tx.id_stone,
             )
 
-        if self.tasy.exists_movto_by_id_stone(tx.id_stone):
+        if movto_ativo:
             # Movto já no Oracle: se foi caminho sem caixa, mantém status 8
             obs_existente = (existente[2] if existente and len(existente) > 2 else "") or ""
             if "SEM_TESOURARIA" in obs_existente.upper() or (

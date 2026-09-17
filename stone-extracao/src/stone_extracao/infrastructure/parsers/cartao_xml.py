@@ -27,6 +27,8 @@ class ParseCartaoStats:
     transactions_total: int = 0
     accepted: int = 0
     skipped_no_capture: int = 0
+    skipped_cancelled: int = 0
+    skipped_chargeback: int = 0
     skipped_no_id: int = 0
     skipped_no_amount: int = 0
     skipped_no_date: int = 0
@@ -41,7 +43,8 @@ class ParseCartaoStats:
         sections = ",".join(f"{k}:{v}" for k, v in sorted(self.root_sections.items())) or "-"
         base = (
             f"txs_xml={self.transactions_total} | aceitas(Captures>=1)={self.accepted} | "
-            f"sem_capture={self.skipped_no_capture} | sem_id={self.skipped_no_id} | "
+            f"sem_capture={self.skipped_no_capture} | canceladas={self.skipped_cancelled} | "
+            f"chargeback={self.skipped_chargeback} | sem_id={self.skipped_no_id} | "
             f"sem_valor={self.skipped_no_amount} | sem_data={self.skipped_no_date} | "
             f"intl_sim={self.international_true} | intl_nao={self.international_false}"
             + (f" | StoneCode={self.stone_code}" if self.stone_code else "")
@@ -138,15 +141,33 @@ def _extract_terminal(tx: ET.Element) -> str:
     return initiator or "UNKNOWN"
 
 
-def _has_capture(tx: ET.Element) -> bool:
-    events = _find_child(tx, "Events")
+def _event_count(events: ET.Element | None, name: str) -> int:
     if events is None:
-        return False
-    captures = _find_text(events, "Captures", "0") or "0"
+        return 0
+    raw = _find_text(events, name, "0") or "0"
     try:
-        return int(captures) >= 1
+        return int(raw)
     except ValueError:
-        return False
+        return 0
+
+
+def _has_capture(tx: ET.Element) -> bool:
+    return _event_count(_find_child(tx, "Events"), "Captures") >= 1
+
+
+def _void_reason(tx: ET.Element) -> str | None:
+    """Cancelamento / chargeback: não publicar (mesmo com Captures>=1)."""
+    events = _find_child(tx, "Events")
+    if _event_count(events, "Cancellations") >= 1 or _find_child(tx, "Cancellations") is not None:
+        return "cancelled"
+    if _event_count(events, "Chargebacks") >= 1 or _find_child(tx, "Chargebacks") is not None:
+        return "chargeback"
+    if (
+        _event_count(events, "ChargebackRefunds") >= 1
+        or _find_child(tx, "ChargebackRefunds") is not None
+    ):
+        return "chargeback"
+    return None
 
 
 def _parse_transaction(
@@ -158,6 +179,14 @@ def _parse_transaction(
 ) -> TransacaoCartao | None:
     if not _has_capture(tx):
         stats.skipped_no_capture += 1
+        return None
+
+    voided = _void_reason(tx)
+    if voided == "cancelled":
+        stats.skipped_cancelled += 1
+        return None
+    if voided == "chargeback":
+        stats.skipped_chargeback += 1
         return None
 
     id_stone = _find_text(tx, "AcquirerTransactionKey")

@@ -112,6 +112,7 @@ FROM
     movto_cartao_cr
 WHERE
     ds_observacao LIKE :ds_observacao
+    AND dt_cancelamento IS NULL
     AND ROWNUM = 1
 """
 
@@ -129,6 +130,7 @@ FROM movto_cartao_cr m
 JOIN caixa_receb cr ON cr.nr_sequencia = m.nr_seq_caixa_rec
 JOIN caixa_saldo_diario csd ON csd.nr_sequencia = cr.nr_seq_saldo_caixa
 WHERE m.ds_observacao LIKE :ds_observacao
+  AND m.dt_cancelamento IS NULL
   AND NOT EXISTS (
       SELECT 1
       FROM movto_trans_financ d
@@ -150,6 +152,7 @@ SELECT
 FROM movto_cartao_cr m
 JOIN caixa_receb cr ON cr.nr_sequencia = m.nr_seq_caixa_rec
 WHERE m.ds_observacao LIKE :ds_observacao
+  AND m.dt_cancelamento IS NULL
   AND ROWNUM = 1
 """
 
