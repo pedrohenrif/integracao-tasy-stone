@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Webhook PIX (opcional: header de validação quando Stone fornecer)
     PIX_WEBHOOK_SECRET: str = ""
 
-    # Backup físico do XML de cartão (VM) — útil para auditoria / dia sem captura
+    # Backup físico na VM: XML cartão e CSV PIX (webhook/CSV) + conferência JSON
     STONE_XML_BACKUP_ENABLED: bool = True
     STONE_XML_BACKUP_DIR: str = "data/xml_backup"
 

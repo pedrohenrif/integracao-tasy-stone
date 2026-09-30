@@ -12,6 +12,7 @@ from stone_extracao.application.use_cases.extrair_conciliacao_cartao import (
 )
 from stone_extracao.application.use_cases.receber_webhook_pix import (
     ReceberWebhookPix,
+    WebhookPixResultado,
     extract_download_url,
     parse_webhook_payload,
 )
@@ -47,6 +48,7 @@ from stone_extracao.infrastructure.stone.conciliation_client import (
 )
 from stone_extracao.infrastructure.stone.pix_client import PixFetchError, StonePixClient
 from stone_extracao.infrastructure.store.filtro_seriais import resolve_terminals
+from stone_extracao.infrastructure.store.pix_backup import listar_pix_backup
 from stone_extracao.infrastructure.store.pix_webhook_inbox import listar_hits, registrar_hit
 from stone_extracao.infrastructure.store.ultima_extracao import salvar_extracao
 from stone_extracao.interfaces.api.painel import router as painel_router
@@ -373,6 +375,29 @@ class PixWebhookResponse(BaseModel):
     event_type: str = "pix"
     status: str = "processed"
     reference_date: str | None = None
+    skipped_serial: int = 0
+    backup_path: str | None = None
+    conferencia_path: str | None = None
+    alerta: str | None = None
+    parse: dict = Field(default_factory=dict)
+
+
+def _pix_response_from_result(result: WebhookPixResultado) -> PixWebhookResponse:
+    return PixWebhookResponse(
+        source=result.source,
+        parsed_count=result.parsed_count,
+        published_count=result.published_count,
+        queue=settings.RABBITMQ_QUEUE_PIX,
+        sample_ids=result.sample_ids,
+        event_type=result.event_type,
+        status=result.status,
+        reference_date=result.reference_date,
+        skipped_serial=result.skipped_serial,
+        backup_path=result.backup_path,
+        conferencia_path=result.conferencia_path,
+        alerta=result.alerta,
+        parse=result.parse_stats or {},
+    )
 
 
 class PixWebhookRegisterBody(BaseModel):
@@ -618,11 +643,14 @@ async def _process_pix_webhook_body(publisher: RabbitPublisher, body: bytes) -> 
             body, source="webhook", terminals=resolve_terminals()
         )
         logger.info(
-            "Webhook PIX processado | type=%s | parsed=%s | published=%s | ref=%s",
+            "Webhook PIX processado | type=%s | parsed=%s | published=%s | skipped_serial=%s | ref=%s | backup=%s | alerta=%s",
             result.event_type,
             result.parsed_count,
             result.published_count,
+            result.skipped_serial,
             result.reference_date,
+            result.backup_path or "-",
+            result.alerta or "-",
         )
         await _apos_webhook_pix_ok(
             publisher,
@@ -705,6 +733,19 @@ async def pix_webhook_probe(request: Request):
 async def pix_webhook_inbox(limit: int = Query(default=20, ge=1, le=50)):
     """Últimos hits no webhook — prova se a Stone chegou neste servidor."""
     return listar_hits(limit=limit)
+
+
+@app.get("/pix/backup/{date}")
+async def pix_backup_do_dia(date: str):
+    """
+    Conferência do CSV PIX gravado na VM (data/xml_backup/pix/YYYY/YYYYMMDD/).
+    date = YYYY-MM-DD ou YYYYMMDD.
+    """
+    cleaned = (date or "").strip()
+    digits = cleaned.replace("-", "")
+    if len(digits) != 8 or not digits.isdigit():
+        raise HTTPException(status_code=400, detail="date deve ser YYYY-MM-DD ou YYYYMMDD")
+    return listar_pix_backup(cleaned)
 
 
 @app.post("/pix/webhook", response_model=PixWebhookResponse)
@@ -825,16 +866,7 @@ async def pix_webhook(
         event_type=result.event_type,
     )
 
-    return PixWebhookResponse(
-        source=result.source,
-        parsed_count=result.parsed_count,
-        published_count=result.published_count,
-        queue=settings.RABBITMQ_QUEUE_PIX,
-        sample_ids=result.sample_ids,
-        event_type=result.event_type,
-        status=result.status,
-        reference_date=result.reference_date,
-    )
+    return _pix_response_from_result(result)
 
 
 @app.post("/pix/conciliation/dev", response_model=PixWebhookResponse)
@@ -885,13 +917,7 @@ async def pix_dev_from_sample(
     result = await use_case.execute(
         raw, source="sample", terminals=terminals, limit=limit
     )
-    return PixWebhookResponse(
-        source=result.source,
-        parsed_count=result.parsed_count,
-        published_count=result.published_count,
-        queue=settings.RABBITMQ_QUEUE_PIX,
-        sample_ids=result.sample_ids,
-    )
+    return _pix_response_from_result(result)
 
 
 @app.post("/pix/conciliation/csv", response_model=PixWebhookResponse)
@@ -923,13 +949,12 @@ async def pix_csv_manual(
     use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
     try:
         result = await use_case.execute(
-            raw, source="csv_manual", terminals=terminals
+            raw, source="csv_manual", terminals=terminals, reference_date=date
         )
     except Exception as exc:
         logger.exception("PIX CSV manual falhou | date=%s | file=%s", date, file.filename)
         raise HTTPException(status_code=422, detail=f"Falha ao parsear/publicar CSV PIX: {exc}") from exc
 
-    result.reference_date = date
     lote.marcar_webhook_recebido(date, pix_published=result.published_count)
     logger.info(
         "PIX CSV manual | date=%s | file=%s | parsed=%s | published=%s | trigger_cartao=%s",
@@ -955,13 +980,4 @@ async def pix_csv_manual(
                 ),
             ) from None
 
-    return PixWebhookResponse(
-        source=result.source,
-        parsed_count=result.parsed_count,
-        published_count=result.published_count,
-        queue=settings.RABBITMQ_QUEUE_PIX,
-        sample_ids=result.sample_ids,
-        event_type="pix",
-        status="processed",
-        reference_date=date,
-    )
+    return _pix_response_from_result(result)

@@ -5,6 +5,8 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from stone_extracao.application.use_cases.receber_webhook_pix import (
     ReceberWebhookPix,
     extract_download_url,
@@ -13,6 +15,19 @@ from stone_extracao.application.use_cases.receber_webhook_pix import (
 from stone_extracao.infrastructure.parsers.pix_parser import PixCsvParser
 
 SAMPLE = Path(__file__).resolve().parents[2] / "stone_movimento_20260708_pix.xml"
+
+CSV_DOIS_SERIAIS = """id,status,pix_transaction__detail__operation,amount,pix_transaction__detail__provider_datetime,pix_transaction__terminal__serial_number
+pix-cantina,paid,pay,1500,2026-09-15T10:00:00-03:00,PB09231S72079
+pix-outro,paid,pay,2300,2026-09-15T10:05:00-03:00,PB0923A171142
+"""
+
+
+@pytest.fixture(autouse=True)
+def _disable_pix_backup(monkeypatch):
+    from stone_extracao.infrastructure.store import pix_backup
+
+    monkeypatch.setattr(pix_backup.settings, "STONE_XML_BACKUP_ENABLED", False)
+
 
 
 class _FakePublisher:
@@ -110,3 +125,49 @@ def test_webhook_raw_csv_still_works():
     result = asyncio.run(use_case.execute(csv, source="sample", limit=2))
     assert result.published_count == 2
     assert result.event_type == "pix"
+
+
+def test_webhook_serial_fora_piloto_nao_publica_e_alerta():
+    publisher = _FakePublisher()
+    use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
+    result = asyncio.run(
+        use_case.execute(
+            CSV_DOIS_SERIAIS,
+            source="webhook",
+            terminals={"PB09231S72079"},
+            reference_date="2026-09-15",
+        )
+    )
+    assert result.parsed_count == 2
+    assert result.published_count == 1
+    assert result.skipped_serial == 1
+    assert result.alerta is not None
+    assert "PUBLICAR_SOMENTE_SERIAIS" in result.alerta
+    assert result.conferencia["ok"] is False
+    assert result.conferencia["fora_piloto_amostras"][0]["id_stone"] == "pix-outro"
+    assert publisher.items[0].transaction.id_stone == "pix-cantina"
+
+
+def test_webhook_grava_csv_e_conferencia(tmp_path, monkeypatch):
+    from stone_extracao.infrastructure.store import pix_backup
+
+    monkeypatch.setattr(pix_backup.settings, "STONE_XML_BACKUP_ENABLED", True)
+    monkeypatch.setattr(pix_backup.settings, "STONE_XML_BACKUP_DIR", str(tmp_path / "xml_backup"))
+
+    publisher = _FakePublisher()
+    use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
+    result = asyncio.run(
+        use_case.execute(
+            CSV_DOIS_SERIAIS,
+            source="webhook",
+            terminals={"PB09231S72079"},
+            reference_date="2026-09-15",
+        )
+    )
+    assert result.backup_path
+    backup = Path(result.backup_path)
+    assert backup.is_file()
+    assert "pix-outro" in backup.read_text(encoding="utf-8")
+    listing = pix_backup.listar_pix_backup("2026-09-15")
+    assert listing["conferencia"]["fora_piloto"] == 1
+    assert listing["conferencia"]["publicados"] == 1

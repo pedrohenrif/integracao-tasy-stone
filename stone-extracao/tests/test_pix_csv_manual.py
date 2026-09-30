@@ -1,8 +1,18 @@
 from pathlib import Path
 import asyncio
 
+import pytest
+
 from stone_extracao.application.use_cases.receber_webhook_pix import ReceberWebhookPix
 from stone_extracao.infrastructure.parsers.pix_parser import PixCsvParser
+
+
+@pytest.fixture(autouse=True)
+def _disable_pix_backup(monkeypatch):
+    from stone_extracao.infrastructure.store import pix_backup
+
+    monkeypatch.setattr(pix_backup.settings, "STONE_XML_BACKUP_ENABLED", False)
+
 
 
 SAMPLE = Path(__file__).resolve().parents[2] / "stone_movimento_20260708_pix.xml"
