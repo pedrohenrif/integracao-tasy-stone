@@ -39,6 +39,7 @@ class CaixaTasy(Base):
     cd_caixa: Mapped[int] = mapped_column(Integer, primary_key=True)
     ds_caixa: Mapped[str] = mapped_column(String(120), nullable=False)
     ie_ativo: Mapped[str] = mapped_column(CHAR(1), nullable=False, default="S")
+    ie_somente_movto: Mapped[str] = mapped_column(CHAR(1), nullable=False, default="N")
     dt_atualizacao: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -57,7 +58,7 @@ class MaquininhaStone(Base):
     dt_registro: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    cd_transacao_financeira: Mapped[int] = mapped_column(Integer, nullable=False)
+    cd_transacao_financeira: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class MapeamentoTransacaoTasy(Base):

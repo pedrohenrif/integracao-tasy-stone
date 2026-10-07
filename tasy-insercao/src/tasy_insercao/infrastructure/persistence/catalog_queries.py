@@ -26,7 +26,8 @@ def listar_maquininhas() -> list[dict[str, Any]]:
                 m.ds_maquininha,
                 m.ie_status,
                 m.cd_transacao_financeira,
-                m.dt_registro
+                m.dt_registro,
+                COALESCE(c.ie_somente_movto, 'N') AS ie_somente_movto
             FROM maquininha_stone m
             LEFT JOIN caixas_tasy c ON c.cd_caixa = m.cd_caixa
             ORDER BY m.ie_status, m.nr_serie_maquininha
@@ -35,11 +36,28 @@ def listar_maquininhas() -> list[dict[str, Any]]:
         return list(cur.fetchall())
 
 
+def listar_seriais_ativos() -> list[str]:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT nr_serie_maquininha
+            FROM maquininha_stone
+            WHERE ie_status = 'A'
+            ORDER BY nr_serie_maquininha
+            """
+        )
+        return [
+            str(r["nr_serie_maquininha"]).strip()
+            for r in cur.fetchall()
+            if r.get("nr_serie_maquininha")
+        ]
+
+
 def upsert_maquininha(
     *,
     nr_serie_maquininha: str,
     cd_caixa: int,
-    cd_transacao_financeira: int,
+    cd_transacao_financeira: int | None,
     ds_maquininha: str | None,
     ie_status: str,
 ) -> dict[str, Any]:
@@ -76,6 +94,23 @@ def upsert_maquininha(
         row = cur.fetchone()
         conn.commit()
         return row or {}
+
+
+def atualizar_caixa(*, cd_caixa: int, ie_somente_movto: str) -> dict[str, Any] | None:
+    flag = "S" if str(ie_somente_movto or "").strip().upper() == "S" else "N"
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE caixas_tasy
+            SET ie_somente_movto = %(flag)s, dt_atualizacao = NOW()
+            WHERE cd_caixa = %(caixa)s
+            RETURNING cd_caixa, ds_caixa, ie_somente_movto
+            """,
+            {"flag": flag, "caixa": cd_caixa},
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return row
 
 
 def listar_mapeamentos() -> list[dict[str, Any]]:

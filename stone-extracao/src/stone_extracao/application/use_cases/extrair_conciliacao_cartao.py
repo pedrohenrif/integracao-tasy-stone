@@ -12,6 +12,7 @@ from stone_extracao.domain.cartao.ports import (
 )
 from stone_extracao.infrastructure.config.logging import get_logger
 from stone_extracao.infrastructure.parsers.cartao_totais import analyze_cartao_totais
+from stone_extracao.infrastructure.messaging.portal_movimentos import enviar_movimentos_stone
 from stone_extracao.infrastructure.store.xml_backup import save_cartao_xml_backup
 
 logger = get_logger(__name__)
@@ -87,11 +88,14 @@ class ExtrairConciliacaoCartao:
                 len(transactions),
             )
 
-        if terminals:
-            wanted = {t.strip() for t in terminals if t and str(t).strip()}
+        todas = list(transactions)
+        if terminals is not None:
+            wanted = {str(t).strip().upper() for t in terminals if t and str(t).strip()}
             before = len(transactions)
             transactions = [
-                t for t in transactions if (t.nr_serie_maquininha or "").strip() in wanted
+                t
+                for t in transactions
+                if (t.nr_serie_maquininha or "").strip().upper() in wanted
             ]
             logger.info(
                 "Filtro serial | cartao | date=%s | antes=%s | depois=%s | terminals=%s",
@@ -103,6 +107,31 @@ class ExtrairConciliacaoCartao:
             parse_stats["filter_terminals"] = sorted(wanted)
             parse_stats["filtered_from"] = before
             parse_stats["filtered_to"] = len(transactions)
+
+        published_ids = {t.id_stone for t in transactions}
+        portal_items = []
+        for tx in todas:
+            publicado = tx.id_stone in published_ids
+            dt = tx.dt_movimentacao
+            portal_items.append(
+                {
+                    "origem": "cartao",
+                    "id_stone": tx.id_stone,
+                    "nr_serie_maquininha": tx.nr_serie_maquininha,
+                    "vl_transacao": str(tx.vl_transacao),
+                    "dt_movimentacao": dt.isoformat() if dt else None,
+                    "reference_date": getattr(tx, "reference_date", None) or reference_date,
+                    "status_origem": None,
+                    "operation": None,
+                    "publicado": "S" if publicado else "N",
+                    "ds_motivo": None if publicado else "fora_piloto",
+                    "source": "cartao",
+                }
+            )
+        try:
+            await enviar_movimentos_stone(portal_items)
+        except Exception:
+            logger.exception("Espelho cartão no portal falhou | date=%s", reference_date)
 
         tag = "ok" if transactions else "vazio"
         try:

@@ -170,10 +170,10 @@ export function ErrosPage() {
   return (
     <div>
       <header className="page-head">
-        <h1>Erros / DLQ</h1>
+        <h1>Reprocessar</h1>
         <p className="muted">
-          Erros, Sem Tesouraria e Reintegrar (9). Status &quot;Todos&quot; lista qualquer status (respeitando as
-          datas). Reprocesse com edição de serial/caixa ou em lote.
+          Retry, DLQ, Sem Tesouraria, só movto (11) e Reintegrar (9). Status &quot;Todos&quot; lista qualquer status
+          (respeitando as datas). Reprocesse com edição de serial/caixa ou em lote.
         </p>
       </header>
 

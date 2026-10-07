@@ -57,7 +57,8 @@ Reprocessar a mesma data / reenviar a fila é seguro: as que já estão OK são 
 | 7 | DLQ | Erro definitivo após esgotar tentativas |
 | 8 | Sem Tesouraria | Legado (`SEM_CAIXA_POLICY=insert`): movto no Tasy **sem** caixa_receb. Não vai para DLQ. |
 | 9 | Reintegrar | FECHAR falhou; Oracle limpo — reprocessar do zero. |
-| 10 | Ignorado | Piloto / sem caixa (`SEM_CAIXA_POLICY=ignore`) ou fora de `INTEGRAR_SOMENTE_*`. **Não** grava Oracle. |
+| 10 | Ignorado | Sem maquininha ativa (`SEM_CAIXA_POLICY=ignore`). **Não** grava Oracle. |
+| 11 | Só movto | Caixa `ie_somente_movto=S` (ex. Telemarketing): MOVTO_CARTAO_CR sem caixa diário. |
 
 ---
 

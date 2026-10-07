@@ -142,7 +142,7 @@ def test_webhook_serial_fora_piloto_nao_publica_e_alerta():
     assert result.published_count == 1
     assert result.skipped_serial == 1
     assert result.alerta is not None
-    assert "PUBLICAR_SOMENTE_SERIAIS" in result.alerta
+    assert "inativo" in result.alerta.lower() or "cadastrado" in result.alerta.lower()
     assert result.conferencia["ok"] is False
     assert result.conferencia["fora_piloto_amostras"][0]["id_stone"] == "pix-outro"
     assert publisher.items[0].transaction.id_stone == "pix-cantina"

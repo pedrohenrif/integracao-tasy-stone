@@ -7,6 +7,7 @@ const STATUS: Record<number, string> = {
   6: "Retry",
   7: "DLQ",
   8: "Sem Tesouraria",
+  11: "Só movto",
   9: "Reintegrar",
   10: "Ignorado",
 };
@@ -32,7 +33,14 @@ export function RegistrosTable({
   onToggleAll,
   onReprocessRow,
 }: Props) {
-  if (!rows.length) return <p className="muted">Nenhum registro.</p>;
+  if (!rows.length) {
+    return (
+      <div className="empty-state">
+        <strong>Nenhum registro neste filtro</strong>
+        <p className="muted">Altere as datas, o caixa ou o status e clique em Filtrar.</p>
+      </div>
+    );
+  }
 
   const allIds = rows.map((r) => r.nr_sequencia);
   const allSelected = selectable && selected != null && allIds.every((id) => selected.has(id));
@@ -69,7 +77,12 @@ export function RegistrosTable({
         <tbody>
           {rows.map((r) => {
             const canReprocess =
-              r.cd_status === 6 || r.cd_status === 7 || r.cd_status === 8 || r.cd_status === 9 || r.cd_status === 10;
+              r.cd_status === 6 ||
+              r.cd_status === 7 ||
+              r.cd_status === 8 ||
+              r.cd_status === 9 ||
+              r.cd_status === 10 ||
+              r.cd_status === 11;
             return (
               <tr
                 key={r.nr_sequencia}

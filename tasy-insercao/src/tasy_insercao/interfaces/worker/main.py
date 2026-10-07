@@ -150,6 +150,14 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
             )
             return
 
+        if resultado.status == StatusIntegracao.SOMENTE_MOVTO:
+            logger.info(
+                "Inserido só movto | cartao | id_stone=%s | %s",
+                resultado.id_stone,
+                resultado.mensagem,
+            )
+            return
+
         if resultado.status == StatusIntegracao.IGNORADO:
             logger.info(
                 "Ignorado | cartao | id_stone=%s | %s",
@@ -221,6 +229,14 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
         if resultado.status == StatusIntegracao.SEM_TESOURARIA:
             logger.info(
                 "Inserido sem tesouraria | pix | id_stone=%s | %s",
+                resultado.id_stone,
+                resultado.mensagem,
+            )
+            return
+
+        if resultado.status == StatusIntegracao.SOMENTE_MOVTO:
+            logger.info(
+                "Inserido só movto | pix | id_stone=%s | %s",
                 resultado.id_stone,
                 resultado.mensagem,
             )

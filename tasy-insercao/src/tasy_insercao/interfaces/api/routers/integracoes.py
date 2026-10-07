@@ -13,6 +13,7 @@ from tasy_insercao.infrastructure.persistence.debug_queries import (
     listar_registros,
     resumo,
 )
+from tasy_insercao.infrastructure.persistence.movimento_stone import listar_movimentos
 from tasy_insercao.interfaces.api.deps import CurrentUser
 
 router = APIRouter(prefix="/api", tags=["integracoes"])
@@ -127,4 +128,35 @@ async def api_registros(
             "por_caixa": [_serialize_row(x) for x in summary["por_caixa"]],
         },
         "registros": [_serialize_row(r) for r in rows],
+    }
+
+
+@router.get("/movimentos-stone")
+async def api_movimentos_stone(
+    _user: CurrentUser,
+    data_de: str | None = None,
+    data_ate: str | None = None,
+    origem: str | None = None,
+    nr_serie: str | None = None,
+    publicado: str | None = None,
+    id_stone: str | None = None,
+    limit: int = Query(default=200, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
+):
+    try:
+        data = listar_movimentos(
+            data_de=_parse_date(data_de),
+            data_ate=_parse_date(data_ate),
+            origem=(origem or "").strip().lower() or None,
+            nr_serie=nr_serie,
+            publicado=(publicado or "").strip().upper()[:1] or None,
+            id_stone=id_stone,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return {
+        "resumo": _serialize_row(data["resumo"]),
+        "items": [_serialize_row(r) for r in data["items"]],
     }

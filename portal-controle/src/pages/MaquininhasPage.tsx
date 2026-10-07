@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { maquininhasApi, saveMaquininhaApi, type Maquininha } from "../api/client";
+import {
+  maquininhasApi,
+  saveCaixaApi,
+  saveMaquininhaApi,
+  type CaixaOpt,
+  type Maquininha,
+} from "../api/client";
 
 const empty = {
   nr_serie_maquininha: "",
@@ -16,7 +22,7 @@ function normSerial(s: string) {
 export function MaquininhasPage() {
   const [items, setItems] = useState<Maquininha[]>([]);
   const [pendentes, setPendentes] = useState<string[]>([]);
-  const [caixas, setCaixas] = useState<Array<{ cd_caixa: number; ds_caixa: string }>>([]);
+  const [caixas, setCaixas] = useState<CaixaOpt[]>([]);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
@@ -41,6 +47,12 @@ export function MaquininhasPage() {
     if (!serial) return null;
     return items.find((m) => normSerial(m.nr_serie_maquininha) === serial) ?? null;
   }, [form.nr_serie_maquininha, items]);
+
+  const caixaSel = useMemo(
+    () => caixas.find((c) => String(c.cd_caixa) === form.cd_caixa) ?? null,
+    [caixas, form.cd_caixa],
+  );
+  const somenteMovto = (caixaSel?.ie_somente_movto || "").toUpperCase() === "S";
 
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -67,7 +79,8 @@ export function MaquininhasPage() {
     setForm({
       nr_serie_maquininha: row.nr_serie_maquininha,
       cd_caixa: String(row.cd_caixa),
-      cd_transacao_financeira: String(row.cd_transacao_financeira),
+      cd_transacao_financeira:
+        row.cd_transacao_financeira == null ? "" : String(row.cd_transacao_financeira),
       ds_maquininha: row.ds_maquininha || "",
       ie_status: row.ie_status || "A",
     });
@@ -126,11 +139,17 @@ export function MaquininhasPage() {
         );
       return;
     }
+    const caixaSel = caixas.find((c) => String(c.cd_caixa) === form.cd_caixa);
+    const somenteMovto = (caixaSel?.ie_somente_movto || "").toUpperCase() === "S";
     try {
       await saveMaquininhaApi({
         nr_serie_maquininha: serial,
         cd_caixa: Number(form.cd_caixa),
-        cd_transacao_financeira: Number(form.cd_transacao_financeira),
+        cd_transacao_financeira: somenteMovto
+          ? form.cd_transacao_financeira
+            ? Number(form.cd_transacao_financeira)
+            : null
+          : Number(form.cd_transacao_financeira),
         ds_maquininha: form.ds_maquininha || undefined,
         ie_status: form.ie_status,
       });
@@ -147,7 +166,10 @@ export function MaquininhasPage() {
     <div>
       <header className="page-head">
         <h1>Cadastro — Maquininhas</h1>
-        <p className="muted">Incluir / editar terminais. Busque pelo serial ou filtre pelo caixa.</p>
+        <p className="muted">
+          Só as ativas entram na extração e na integração. Inative para parar de importar — sem lista no
+          .env.
+        </p>
       </header>
 
       {pendentes.length > 0 && (
@@ -187,17 +209,46 @@ export function MaquininhasPage() {
               {caixas.map((c) => (
                 <option key={c.cd_caixa} value={c.cd_caixa}>
                   {c.cd_caixa} — {c.ds_caixa}
+                  {(c.ie_somente_movto || "").toUpperCase() === "S" ? " (só movto)" : ""}
                 </option>
               ))}
             </select>
           </label>
+          {form.cd_caixa && (
+            <label className="check-inline">
+              <input
+                type="checkbox"
+                checked={somenteMovto}
+                onChange={async (e) => {
+                  const flag = e.target.checked ? "S" : "N";
+                  try {
+                    const row = await saveCaixaApi(Number(form.cd_caixa), flag);
+                    setCaixas((prev) =>
+                      prev.map((c) =>
+                        c.cd_caixa === row.cd_caixa ? { ...c, ie_somente_movto: row.ie_somente_movto } : c,
+                      ),
+                    );
+                    setMsg(
+                      flag === "S"
+                        ? "Caixa marcado: só movimento no Tasy (sem caixa diário)."
+                        : "Caixa voltou ao fluxo normal (caixa diário + TF).",
+                    );
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Erro ao atualizar caixa");
+                  }
+                }}
+              />
+              Só movimento (sem caixa diário) — use quando o caixa tem várias transações financeiras, como Telemarketing
+            </label>
+          )}
           <label>
             Transação financeira (Tasy)
             <input
-              required
+              required={!somenteMovto}
               type="number"
               value={form.cd_transacao_financeira}
               onChange={(e) => setForm({ ...form, cd_transacao_financeira: e.target.value })}
+              placeholder={somenteMovto ? "Opcional neste caixa" : ""}
             />
           </label>
           <label>
@@ -315,7 +366,7 @@ export function MaquininhasPage() {
                     {m.cd_caixa}
                     <div className="muted small">{m.ds_caixa}</div>
                   </td>
-                  <td>{m.cd_transacao_financeira}</td>
+                  <td>{m.cd_transacao_financeira ?? "—"}</td>
                   <td>{m.ds_maquininha || "-"}</td>
                   <td>
                     <span className={`badge ${m.ie_status === "A" ? "s5" : "s7"}`}>{m.ie_status}</span>

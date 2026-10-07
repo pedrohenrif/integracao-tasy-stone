@@ -31,7 +31,7 @@ class IntegrarTransacaoCartao:
     Use case: Caixa -> Dia -> Recebimento (1 por caixa/dia) ->
     Cartao/PIX (N) -> Documento agregado (soma). Todas as maquininhas do caixa
     no mesmo caixa_receb. FECHAR apos quiet period sem novo cartao/PIX nesse recebimento.
-    Sem maquininha ativa / fora do piloto: status IGNORADO (sem Oracle), salvo
+    Sem maquininha ativa (ie_status=A): status IGNORADO (sem Oracle), salvo
     SEM_CAIXA_POLICY=insert (legado Sem Tesouraria).
     Idempotente por id_stone: PG status 5/8/10 só conta se ainda houver
     movto ativo no Oracle (DT_CANCELAMENTO IS NULL). Movto estornado no Tasy
@@ -91,6 +91,14 @@ class IntegrarTransacaoCartao:
                 retryable=False,
                 nr_sequencia_pg=existente[0],
             )
+        if existente and existente[1] == StatusIntegracao.SOMENTE_MOVTO.value and movto_ativo:
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.SOMENTE_MOVTO,
+                mensagem="Já integrado só movto (idempotente)",
+                retryable=False,
+                nr_sequencia_pg=existente[0],
+            )
         if existente and existente[1] == StatusIntegracao.IGNORADO.value:
             return ResultadoIntegracao(
                 id_stone=tx.id_stone,
@@ -103,6 +111,7 @@ class IntegrarTransacaoCartao:
         if existente and existente[1] in (
             StatusIntegracao.INTEGRADO.value,
             StatusIntegracao.SEM_TESOURARIA.value,
+            StatusIntegracao.SOMENTE_MOVTO.value,
         ) and not movto_ativo:
             logger.info(
                 "Staging %s sem movto ativo no Tasy (cancelado/estornado) | "
@@ -123,6 +132,19 @@ class IntegrarTransacaoCartao:
         if movto_ativo:
             # Movto já no Oracle: se foi caminho sem caixa, mantém status 8
             obs_existente = (existente[2] if existente and len(existente) > 2 else "") or ""
+            if existente and existente[1] == StatusIntegracao.SOMENTE_MOVTO.value:
+                nr = self.staging.ensure_registro(
+                    tx,
+                    StatusIntegracao.SOMENTE_MOVTO.value,
+                    "Já existia no Tasy só movto (idempotente)",
+                )
+                return ResultadoIntegracao(
+                    id_stone=tx.id_stone,
+                    status=StatusIntegracao.SOMENTE_MOVTO,
+                    mensagem="Já existia no Tasy só movto (idempotente)",
+                    retryable=False,
+                    nr_sequencia_pg=nr,
+                )
             if "SEM_TESOURARIA" in obs_existente.upper() or (
                 existente and existente[1] == StatusIntegracao.SEM_TESOURARIA.value
             ):
@@ -171,6 +193,17 @@ class IntegrarTransacaoCartao:
             motivo = motivo_ignorar(serial=tx.nr_serie_maquininha, cd_caixa=cd_caixa)
             if motivo:
                 return self._ignorar(tx, motivo, cd_caixa=cd_caixa)
+
+            somente_movto = str(config.get("ie_somente_movto") or "N").strip().upper() == "S"
+            if somente_movto:
+                return self._integrar_somente_movto(tx, cd_caixa=cd_caixa)
+
+            if cd_trans_fin is None:
+                return self._ignorar(
+                    tx,
+                    "caixa exige transação financeira (cadastre TF ou marque só movto no caixa)",
+                    cd_caixa=cd_caixa,
+                )
 
             dt_saldo = self._data_saldo(tx.dt_movimentacao)
             dt_str = dt_saldo.strftime("%Y-%m-%d")
@@ -435,7 +468,7 @@ class IntegrarTransacaoCartao:
         *,
         cd_caixa: int | None = None,
     ) -> ResultadoIntegracao:
-        """Não grava no Oracle — só staging status 10 (piloto / sem caixa)."""
+        """Não grava no Oracle — só staging status 10 (inativa / sem caixa)."""
         obs = f"IGNORADO | serial={tx.nr_serie_maquininha} | {motivo}"
         nr_seq_pg = self.staging.ensure_registro(
             tx,
@@ -451,6 +484,63 @@ class IntegrarTransacaoCartao:
             retryable=False,
             nr_sequencia_pg=nr_seq_pg,
         )
+
+    def _integrar_somente_movto(
+        self, tx: TransacaoCartao, *, cd_caixa: int
+    ) -> ResultadoIntegracao:
+        """
+        Caixa com ie_somente_movto (ex.: Telemarketing): várias transações
+        financeiras no Tasy — grava só movto_cartao_cr, sem saldo/caixa_receb.
+        """
+        dt_saldo = self._data_saldo(tx.dt_movimentacao)
+        obs = (
+            f"SOMENTE_MOVTO | serial={tx.nr_serie_maquininha} | caixa={cd_caixa} | "
+            "movto sem caixa_receb/saldo"
+        )
+        nr_seq_pg = self.staging.ensure_registro(
+            tx,
+            StatusIntegracao.PROCESSANDO.value,
+            obs,
+            cd_caixa=cd_caixa,
+        )
+        try:
+            nr_seq_movto = self._inserir_movto(
+                tx, None, dt_saldo, sem_tesouraria=True, obs_prefix="SOMENTE_MOVTO"
+            )
+            self.staging.update_status(
+                nr_seq_pg, StatusIntegracao.SOMENTE_MOVTO.value, obs
+            )
+            logger.info(
+                "Inserido só movto | id_stone=%s | movto=%s | caixa=%s | serial=%s",
+                tx.id_stone,
+                nr_seq_movto,
+                cd_caixa,
+                tx.nr_serie_maquininha,
+            )
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=StatusIntegracao.SOMENTE_MOVTO,
+                mensagem=obs,
+                retryable=False,
+                nr_sequencia_pg=nr_seq_pg,
+            )
+        except Exception as exc:
+            retryable = is_retryable_error(exc)
+            status = (
+                StatusIntegracao.ERRO_RETRY if retryable else StatusIntegracao.ERRO_DEFINITIVO
+            )
+            logger.exception("Falha só movto | id_stone=%s | %s", tx.id_stone, exc)
+            try:
+                self.staging.update_status(nr_seq_pg, status.value, str(exc)[:500])
+            except Exception:
+                pass
+            return ResultadoIntegracao(
+                id_stone=tx.id_stone,
+                status=status,
+                mensagem=str(exc),
+                retryable=retryable,
+                nr_sequencia_pg=nr_seq_pg,
+            )
 
     def _integrar_sem_tesouraria(self, tx: TransacaoCartao) -> ResultadoIntegracao:
         """
@@ -532,6 +622,7 @@ class IntegrarTransacaoCartao:
         dt_recebimento: date,
         *,
         sem_tesouraria: bool,
+        obs_prefix: str | None = None,
     ) -> int:
         tipo_api = map_tipo_para_api(tx.cd_tipo_transacao.value)
         bandeira = map_stone_brand(tx.cd_bandeira)
@@ -550,7 +641,7 @@ class IntegrarTransacaoCartao:
         dt_venc = self._calcular_vencimento(tipo_api, dt_recebimento)
         ds_obs = f"Maquininha - {tx.nr_serie_maquininha} | ID stone - {tx.id_stone}"
         if sem_tesouraria:
-            ds_obs = f"SEM_TESOURARIA | {ds_obs}"
+            ds_obs = f"{obs_prefix or 'SEM_TESOURARIA'} | {ds_obs}"
         orig = (tx.cd_tipo_transacao.value or "").lower()
         if tipo_api == "pix":
             ds_obs = f"PIX | {ds_obs}"

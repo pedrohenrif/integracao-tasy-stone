@@ -139,7 +139,7 @@ def listar_caixas() -> list[dict[str, Any]]:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT cd_caixa, ds_caixa
+            SELECT cd_caixa, ds_caixa, COALESCE(ie_somente_movto, 'N') AS ie_somente_movto
             FROM caixas_tasy
             ORDER BY ds_caixa
             """
@@ -160,6 +160,7 @@ def resumo(f: FiltrosPainel) -> dict[str, Any]:
                 COUNT(*) FILTER (WHERE r.cd_status = 8) AS sem_tesouraria,
                 COUNT(*) FILTER (WHERE r.cd_status = 9) AS confirmacao_pendente,
                 COUNT(*) FILTER (WHERE r.cd_status = 10) AS ignorado,
+                COUNT(*) FILTER (WHERE r.cd_status = 11) AS somente_movto,
                 COUNT(*) FILTER (WHERE r.cd_status IN (1, 2)) AS pendente,
                 COALESCE(SUM(r.vl_transacao), 0) AS soma_valor,
                 COALESCE(SUM(r.vl_transacao) FILTER (WHERE r.cd_status = 5), 0) AS soma_ok

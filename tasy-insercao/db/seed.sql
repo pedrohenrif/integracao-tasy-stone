@@ -92,6 +92,9 @@ ON CONFLICT (cd_caixa) DO UPDATE SET
     ds_caixa = EXCLUDED.ds_caixa,
     dt_atualizacao = NOW();
 
+-- Telemarketing: várias TF no Tasy → só movto (sem caixa diário)
+UPDATE caixas_tasy SET ie_somente_movto = 'S' WHERE cd_caixa = 13;
+
 -- ---------------------------------------------------------------------------
 -- Maquininhas (export homolog + lista TI — ie_status A=ativa, I=inativa)
 -- Consumer só usa ie_status = 'A'

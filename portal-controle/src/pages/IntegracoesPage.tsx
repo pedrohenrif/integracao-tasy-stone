@@ -163,6 +163,10 @@ export function IntegracoesPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
+          <span>Só movto (11)</span>
+          <b>{totais.somente_movto ?? 0}</b>
+        </div>
+        <div className="card">
           <span>Ignorado (10)</span>
           <b>{totais.ignorado ?? 0}</b>
         </div>

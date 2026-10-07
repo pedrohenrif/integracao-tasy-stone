@@ -91,8 +91,14 @@ export async function desativarUsuarioApi(id: number) {
   });
 }
 
+export type CaixaOpt = {
+  cd_caixa: number;
+  ds_caixa: string;
+  ie_somente_movto?: string;
+};
+
 export async function caixasApi() {
-  return request<{ items: Array<{ cd_caixa: number; ds_caixa: string }> }>("/api/caixas");
+  return request<{ items: CaixaOpt[] }>("/api/caixas");
 }
 
 function toQuery(f: Filtros): string {
@@ -126,7 +132,8 @@ export type Maquininha = {
   ds_caixa?: string;
   ds_maquininha?: string;
   ie_status: string;
-  cd_transacao_financeira: number;
+  cd_transacao_financeira: number | null;
+  ie_somente_movto?: string;
 };
 
 export type Mapeamento = {
@@ -142,14 +149,21 @@ export async function maquininhasApi() {
   return request<{
     items: Maquininha[];
     seriais_pendentes: string[];
-    caixas: Array<{ cd_caixa: number; ds_caixa: string }>;
+    caixas: CaixaOpt[];
   }>("/api/cadastros/maquininhas");
+}
+
+export async function saveCaixaApi(cd_caixa: number, ie_somente_movto: string) {
+  return request<CaixaOpt>(`/api/cadastros/caixas/${cd_caixa}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ie_somente_movto }),
+  });
 }
 
 export async function saveMaquininhaApi(body: {
   nr_serie_maquininha: string;
   cd_caixa: number;
-  cd_transacao_financeira: number;
+  cd_transacao_financeira: number | null;
   ds_maquininha?: string;
   ie_status: string;
 }) {
@@ -484,4 +498,44 @@ export async function purgeConfirmApi(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export type MovimentoStone = {
+  nr_sequencia: number;
+  origem: string;
+  id_stone: string;
+  nr_serie_maquininha: string | null;
+  vl_transacao: number | null;
+  dt_movimentacao: string | null;
+  reference_date: string | null;
+  status_origem: string | null;
+  operation: string | null;
+  publicado: string;
+  ds_motivo: string | null;
+  source: string | null;
+};
+
+export async function movimentosStoneApi(filtros: {
+  data_de?: string;
+  data_ate?: string;
+  origem?: string;
+  nr_serie?: string;
+  publicado?: string;
+  id_stone?: string;
+  limit?: string;
+  offset?: string;
+}) {
+  const p = new URLSearchParams();
+  Object.entries(filtros).forEach(([k, v]) => {
+    if (v) p.set(k, v);
+  });
+  return request<{
+    resumo: {
+      total?: number;
+      publicados?: number;
+      nao_publicados?: number;
+      soma_valor?: number;
+    };
+    items: MovimentoStone[];
+  }>(`/api/movimentos-stone?${p.toString()}`);
 }

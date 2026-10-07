@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from stone_extracao.domain.pix.models import EventoFilaPix
 from stone_extracao.domain.pix.ports import PixMessagePublisherPort, PixParserPort
 from stone_extracao.infrastructure.config.logging import get_logger
+from stone_extracao.infrastructure.messaging.portal_movimentos import enviar_movimentos_stone
 from stone_extracao.infrastructure.store.pix_backup import (
     save_pix_conferencia,
     save_pix_csv_backup,
@@ -170,9 +171,14 @@ class ReceberWebhookPix:
         parse_stats = getattr(self.parser, "parse_with_stats", None)
         if callable(parse_stats):
             parsed = parse_stats(raw_body)
-            return parsed.transactions, parsed.stats.as_dict(), parsed.stats.summary()
+            return (
+                parsed.transactions,
+                parsed.stats.as_dict(),
+                parsed.stats.summary(),
+                list(getattr(parsed, "portal_rows", None) or []),
+            )
         txs = self.parser.parse(raw_body)
-        return txs, {"accepted": len(txs)}, f"aceitas={len(txs)}"
+        return txs, {"accepted": len(txs)}, f"aceitas={len(txs)}", []
 
     async def _publish_csv(
         self,
@@ -183,7 +189,7 @@ class ReceberWebhookPix:
         limit: int | None,
         reference_date: str | None = None,
     ) -> WebhookPixResultado:
-        transactions, parse_stats, parse_summary = self._parse_csv(raw_body)
+        transactions, parse_stats, parse_summary, portal_rows = self._parse_csv(raw_body)
         parsed_total = len(transactions)
         dates = [t.reference_date for t in transactions if t.reference_date]
         ref = (reference_date or "").strip() or (
@@ -199,11 +205,11 @@ class ReceberWebhookPix:
             logger.exception("Backup CSV PIX falhou | date=%s | source=%s", ref, source)
 
         skipped_serial: list[dict[str, str]] = []
-        if terminals:
-            wanted = {t.strip() for t in terminals if t and t.strip()}
+        if terminals is not None:
+            wanted = {str(t).strip().upper() for t in terminals if t and str(t).strip()}
             kept = []
             for t in transactions:
-                if t.nr_serie_maquininha in wanted:
+                if (t.nr_serie_maquininha or "").strip().upper() in wanted:
                     kept.append(t)
                 else:
                     skipped_serial.append(
@@ -217,6 +223,39 @@ class ReceberWebhookPix:
         if limit is not None and limit >= 0:
             transactions = transactions[:limit]
 
+        published_ids = {t.id_stone for t in transactions}
+        portal_items = []
+        for row in portal_rows:
+            sid = str(row.get("id_stone") or "").strip()
+            if not sid:
+                continue
+            skip = row.get("skip_reason")
+            publicado = skip is None and sid in published_ids
+            motivo = None
+            if skip:
+                motivo = str(skip)
+            elif not publicado:
+                motivo = "fora_piloto"
+            portal_items.append(
+                {
+                    "origem": "pix",
+                    "id_stone": sid,
+                    "nr_serie_maquininha": row.get("nr_serie_maquininha"),
+                    "vl_transacao": row.get("vl_transacao"),
+                    "dt_movimentacao": row.get("dt_movimentacao"),
+                    "reference_date": row.get("reference_date") or ref,
+                    "status_origem": row.get("status_origem"),
+                    "operation": row.get("operation"),
+                    "publicado": "S" if publicado else "N",
+                    "ds_motivo": motivo,
+                    "source": source,
+                }
+            )
+        try:
+            await enviar_movimentos_stone(portal_items)
+        except Exception:
+            logger.exception("Espelho PIX no portal falhou | date=%s", ref)
+
         logger.info(
             "Parseado | pix | %s | apos_filtro=%s | fora_piloto=%s | terminals=%s | limit=%s | backup=%s",
             parse_summary,
@@ -228,7 +267,7 @@ class ReceberWebhookPix:
         )
         if skipped_serial:
             logger.warning(
-                "PIX fora do piloto (não publicado) | date=%s | qtd=%s | amostras=%s",
+                "PIX serial inativo/não cadastrado (não publicado) | date=%s | qtd=%s | amostras=%s",
                 ref,
                 len(skipped_serial),
                 skipped_serial[:10],
@@ -254,8 +293,8 @@ class ReceberWebhookPix:
         alerta = None
         if skipped_serial:
             alerta = (
-                f"{len(skipped_serial)} PIX paid fora do PUBLICAR_SOMENTE_SERIAIS "
-                "(não publicados — conferir serial no piloto)"
+                f"{len(skipped_serial)} PIX paid de serial inativo/não cadastrado "
+                "(não publicados — conferir Maquininhas ativas no portal)"
             )
         elif gaps_inesperados:
             alerta = (

@@ -95,23 +95,3 @@ def test_ignorado_idempotente():
     tasy.inserir_movto_cartao_sem_tesouraria.assert_not_called()
 
 
-def test_allowlist_caixa_ignora_mesmo_com_config():
-    staging = MagicMock()
-    tasy = MagicMock()
-    staging.get_by_id_stone.return_value = None
-    tasy.exists_movto_by_id_stone.return_value = False
-    staging.find_maquininha_config.return_value = {
-        "cd_caixa": 10,
-        "cd_transacao_financeira": 1,
-    }
-    staging.ensure_registro.return_value = 55
-
-    with patch(
-        "tasy_insercao.application.use_cases.integrar_transacao_cartao.motivo_ignorar",
-        return_value="caixa 10 fora do piloto",
-    ):
-        result = IntegrarTransacaoCartao(staging, tasy).execute(_tx("PB09231S72079"))
-
-    assert result.status == StatusIntegracao.IGNORADO
-    tasy.ensure_caixa_saldo_diario.assert_not_called()
-    tasy.inserir_movto_cartao.assert_not_called()

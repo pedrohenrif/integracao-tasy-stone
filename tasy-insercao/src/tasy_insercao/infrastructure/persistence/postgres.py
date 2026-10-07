@@ -83,6 +83,7 @@ class StagingPostgresRepository:
             "nr_serie_maquininha": row[0],
             "cd_caixa": row[1],
             "cd_transacao_financeira": row[2],
+            "ie_somente_movto": (row[3] if len(row) > 3 else "N") or "N",
         }
 
     def find_maquininha_config(self, nr_serie: str) -> dict | None:
@@ -94,6 +95,7 @@ class StagingPostgresRepository:
             "nr_serie_maquininha": row[0],
             "cd_caixa": row[1],
             "cd_transacao_financeira": row[2],
+            "ie_somente_movto": (row[3] if len(row) > 3 else "N") or "N",
         }
 
     def get_bandeira_tasy(self, tipo_api: str, bandeira: str) -> int | None:

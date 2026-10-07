@@ -68,7 +68,7 @@ async def executar_extracao_cartao(
         parser=CartaoXmlParser(),
         publisher=publisher,
     )
-    wanted = terminals if terminals is not None else resolve_terminals()
+    wanted = terminals if terminals is not None else await resolve_terminals()
     result = await use_case.execute(reference_date, terminals=wanted)
     salvar_extracao(
         reference_date=result.reference_date,
@@ -513,12 +513,12 @@ async def ingest_cartao(
     ),
     terminal: str | None = Query(
         default=None,
-        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve PUBLICAR_SOMENTE_SERIAIS.",
+        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve o cadastro ativo.",
     ),
 ):
     """Extrato Cartão: busca ativa na API Stone e publica 1 msg/tx."""
     publisher = _publisher(request)
-    terminals = resolve_terminals(terminal)
+    terminals = await resolve_terminals(terminal)
     try:
         result = await executar_extracao_cartao_com_gate(
             publisher, date, force=force, origem="api", terminals=terminals
@@ -553,7 +553,7 @@ async def ingest_cartao_d1(
     reference_date = data_ontem(settings.CARTAO_CRON_TZ)
     logger.info("Extração cartão D-1 (manual) | date=%s | force=%s", reference_date, force)
     publisher = _publisher(request)
-    terminals = resolve_terminals(terminal)
+    terminals = await resolve_terminals(terminal)
     try:
         result = await executar_extracao_cartao_com_gate(
             publisher,
@@ -640,7 +640,7 @@ async def _process_pix_webhook_body(publisher: RabbitPublisher, body: bytes) -> 
     )
     try:
         result = await use_case.execute(
-            body, source="webhook", terminals=resolve_terminals()
+            body, source="webhook", terminals=await resolve_terminals()
         )
         logger.info(
             "Webhook PIX processado | type=%s | parsed=%s | published=%s | skipped_serial=%s | ref=%s | backup=%s | alerta=%s",
@@ -854,7 +854,7 @@ async def pix_webhook(
     )
     try:
         result = await use_case.execute(
-            body, source="webhook", terminals=resolve_terminals()
+            body, source="webhook", terminals=await resolve_terminals()
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Falha ao processar webhook PIX: {exc}") from exc
@@ -930,7 +930,7 @@ async def pix_csv_manual(
     ),
     terminal: str | None = Query(
         default=None,
-        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve PUBLICAR_SOMENTE_SERIAIS.",
+        description="Filtra serial(is). Vários separados por vírgula. Sobrescreve o cadastro ativo.",
     ),
     file: UploadFile = File(..., description="CSV do extrato PIX Stone (o mesmo do webhook)"),
 ):
@@ -945,7 +945,7 @@ async def pix_csv_manual(
         raise HTTPException(status_code=400, detail="Arquivo CSV vazio")
 
     publisher = _publisher(request)
-    terminals = resolve_terminals(terminal)
+    terminals = await resolve_terminals(terminal)
     use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
     try:
         result = await use_case.execute(

@@ -64,3 +64,45 @@ def test_filtro_terminals_cartao(monkeypatch):
     assert result.published_count == 1
     assert result.transactions[0].nr_serie_maquininha == "PB09231S72079"
     publisher.publish_cartao.assert_awaited_once()
+
+
+def test_resolve_terminals_usa_cadastro_ativo(monkeypatch):
+    from stone_extracao.infrastructure.store import filtro_seriais as fs
+
+    fs.reset_cache()
+
+    class FakeResp:
+        status_code = 200
+        content = b'{"seriais":["pb09231s72079"]}'
+
+        def json(self):
+            return {"seriais": ["pb09231s72079"]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url, headers=None):
+            assert url.endswith("/interno/seriais-ativos")
+            return FakeResp()
+
+    monkeypatch.setattr(fs.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(fs.settings, "PORTAL_BASE_URL", "http://portal.test")
+    monkeypatch.setattr(fs.settings, "PORTAL_INTERNAL_TOKEN", "tok")
+    got = asyncio.get_event_loop().run_until_complete(fs.resolve_terminals())
+    assert got == {"PB09231S72079"}
+
+
+def test_resolve_terminals_api_sobrescreve_cadastro():
+    from stone_extracao.infrastructure.store import filtro_seriais as fs
+
+    got = asyncio.get_event_loop().run_until_complete(
+        fs.resolve_terminals("PB09231X75906")
+    )
+    assert got == {"PB09231X75906"}

@@ -88,6 +88,7 @@ class ParsePixStats:
 class ParsePixResult:
     transactions: list[TransacaoPix]
     stats: ParsePixStats
+    portal_rows: list[dict] = field(default_factory=list)
 
 
 def _note_skip(stats: ParsePixStats, reason: str, row: dict[str, str]) -> None:
@@ -115,38 +116,106 @@ def parse_pix_csv_with_stats(content: str | bytes) -> ParsePixResult:
     reader = csv.DictReader(io.StringIO(content))
     result: list[TransacaoPix] = []
     stats = ParsePixStats()
+    portal_rows: list[dict] = []
+
+    def _portal(
+        *,
+        id_stone: str,
+        serial: str,
+        amount,
+        dt_mov,
+        status: str,
+        operation: str,
+        skip_reason: str | None,
+    ) -> None:
+        if not id_stone:
+            return
+        portal_rows.append(
+            {
+                "id_stone": id_stone,
+                "nr_serie_maquininha": serial or None,
+                "vl_transacao": str(amount) if amount is not None else None,
+                "dt_movimentacao": dt_mov.isoformat() if dt_mov else None,
+                "reference_date": dt_mov.strftime("%Y-%m-%d") if dt_mov else None,
+                "status_origem": status or None,
+                "operation": operation or None,
+                "skip_reason": skip_reason,
+            }
+        )
 
     for row in reader:
         stats.rows_total += 1
         status = (row.get("status") or "").strip().lower()
         operation = (row.get("pix_transaction__detail__operation") or "").strip().lower()
+        id_early = (row.get("id") or "").strip()
+        serial_early = (row.get("pix_transaction__terminal__serial_number") or "").strip()
+        amount_early = _centavos_para_reais(
+            row.get("amount") or row.get("pix_transaction__paid_amount")
+        )
+        dt_early = _parse_dt(row.get("pix_transaction__detail__provider_datetime")) or _parse_dt(
+            row.get("created_at")
+        )
         if status != "paid":
             stats.skipped_status += 1
             _note_skip(stats, "status", row)
+            _portal(
+                id_stone=id_early,
+                serial=serial_early,
+                amount=amount_early,
+                dt_mov=dt_early,
+                status=status,
+                operation=operation,
+                skip_reason="status",
+            )
             continue
         if operation and operation != "pay":
             stats.skipped_operation += 1
             _note_skip(stats, "operation", row)
+            _portal(
+                id_stone=id_early,
+                serial=serial_early,
+                amount=amount_early,
+                dt_mov=dt_early,
+                status=status,
+                operation=operation,
+                skip_reason="operation",
+            )
             continue
 
-        id_stone = (row.get("id") or "").strip()
+        id_stone = id_early
         if not id_stone:
             stats.skipped_no_id += 1
             _note_skip(stats, "no_id", row)
             continue
 
-        amount = _centavos_para_reais(row.get("amount") or row.get("pix_transaction__paid_amount"))
+        amount = amount_early
         if amount is None:
             stats.skipped_no_amount += 1
             _note_skip(stats, "no_amount", row)
+            _portal(
+                id_stone=id_stone,
+                serial=serial_early,
+                amount=None,
+                dt_mov=dt_early,
+                status=status,
+                operation=operation,
+                skip_reason="no_amount",
+            )
             continue
 
-        dt_mov = _parse_dt(row.get("pix_transaction__detail__provider_datetime")) or _parse_dt(
-            row.get("created_at")
-        )
+        dt_mov = dt_early
         if dt_mov is None:
             stats.skipped_no_date += 1
             _note_skip(stats, "no_date", row)
+            _portal(
+                id_stone=id_stone,
+                serial=serial_early,
+                amount=amount,
+                dt_mov=None,
+                status=status,
+                operation=operation,
+                skip_reason="no_date",
+            )
             continue
 
         terminal = (row.get("pix_transaction__terminal__serial_number") or "").strip() or "UNKNOWN"
@@ -154,6 +223,15 @@ def parse_pix_csv_with_stats(content: str | bytes) -> ParsePixResult:
         additional = row.get("pix_transaction__additional_data")
 
         stats.accepted += 1
+        _portal(
+            id_stone=id_stone,
+            serial=terminal,
+            amount=amount,
+            dt_mov=dt_mov,
+            status=status,
+            operation=operation or "pay",
+            skip_reason=None,
+        )
         result.append(
             TransacaoPix(
                 id_stone=id_stone,
@@ -172,7 +250,7 @@ def parse_pix_csv_with_stats(content: str | bytes) -> ParsePixResult:
                 reference_date=dt_mov.strftime("%Y-%m-%d"),
             )
         )
-    return ParsePixResult(transactions=result, stats=stats)
+    return ParsePixResult(transactions=result, stats=stats, portal_rows=portal_rows)
 
 
 def parse_pix_csv(content: str | bytes) -> list[TransacaoPix]:

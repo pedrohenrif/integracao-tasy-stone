@@ -126,6 +126,10 @@ export function DashboardPage() {
           <b>{totais.sem_tesouraria ?? 0}</b>
         </div>
         <div className="card">
+          <span>Só movto (11)</span>
+          <b>{totais.somente_movto ?? 0}</b>
+        </div>
+        <div className="card">
           <span>Ignorado (10)</span>
           <b>{totais.ignorado ?? 0}</b>
         </div>
@@ -220,20 +224,56 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="quick-links">
-        <Link to="/integracoes">Ver integrações</Link>
-        <Link to="/erros">Ver erros / Sem Tesouraria</Link>
-        <Link to="/filas">Ver filas</Link>
+      <div className="shortcut-grid">
+        <Link to="/integracoes" className="shortcut-card">
+          <strong>Integrações</strong>
+          <span>Staging do dia e totais por status</span>
+        </Link>
+        <Link to="/movimentos" className="shortcut-card">
+          <strong>Movimentos Stone</strong>
+          <span>CSV/XML do dia, mesmo o que não integrou</span>
+        </Link>
+        <Link to="/erros" className="shortcut-card">
+          <strong>Reprocessar</strong>
+          <span>Retry, DLQ e correção de serial/caixa</span>
+        </Link>
+        <Link to="/filas" className="shortcut-card">
+          <strong>Filas</strong>
+          <span>Mensagens prontas no RabbitMQ</span>
+        </Link>
       </div>
-      <h2>Filas (resumo)</h2>
-      <ul className="fila-list">
-        {filas.map((f) => (
-          <li key={f.name}>
-            <code>{f.name}</code> — ready: {f.messages_ready ?? "-"} · consumers: {f.consumers ?? "-"}
-            {f.error ? <span className="error"> ({f.error})</span> : null}
-          </li>
-        ))}
-      </ul>
+      <h2 className="section-title">Filas</h2>
+      <div className="table-wrap table-wrap-compact">
+        <table>
+          <thead>
+            <tr>
+              <th>Fila</th>
+              <th>Ready</th>
+              <th>Consumers</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="muted">
+                  Sem dados das filas.
+                </td>
+              </tr>
+            ) : (
+              filas.map((f) => (
+                <tr key={f.name}>
+                  <td>
+                    <code>{f.name}</code>
+                    {f.error ? <div className="error small">{f.error}</div> : null}
+                  </td>
+                  <td className="num">{f.messages_ready ?? "-"}</td>
+                  <td className="num">{f.consumers ?? "-"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

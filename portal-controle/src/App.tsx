@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ErrosPage } from "./pages/ErrosPage";
 import { FilasPage } from "./pages/FilasPage";
 import { IntegracoesPage } from "./pages/IntegracoesPage";
+import { MovimentosStonePage } from "./pages/MovimentosStonePage";
 import { LoginLogsPage } from "./pages/LoginLogsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MaquininhasPage } from "./pages/MaquininhasPage";
@@ -41,6 +42,7 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="integracoes" element={<IntegracoesPage />} />
+        <Route path="movimentos" element={<MovimentosStonePage />} />
         <Route path="erros" element={<ErrosPage />} />
         <Route
           path="auditoria"

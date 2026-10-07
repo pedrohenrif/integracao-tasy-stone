@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS caixas_tasy (
     dt_atualizacao        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- S = várias transações financeiras: só MOVTO_CARTAO_CR (sem caixa diário / caixa_receb)
+ALTER TABLE caixas_tasy
+    ADD COLUMN IF NOT EXISTS ie_somente_movto CHAR(1) NOT NULL DEFAULT 'N';
+
 -- Schema Cotolengo (export homolog)
 CREATE TABLE IF NOT EXISTS maquininha_stone (
     nr_sequencia                SERIAL PRIMARY KEY,
@@ -26,8 +30,11 @@ CREATE TABLE IF NOT EXISTS maquininha_stone (
     ds_maquininha               VARCHAR(120),
     ie_status                   CHAR(1) NOT NULL DEFAULT 'A',  -- A=ativa, I=inativa
     dt_registro                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    cd_transacao_financeira     INTEGER NOT NULL
+    cd_transacao_financeira     INTEGER
 );
+
+ALTER TABLE maquininha_stone
+    ALTER COLUMN cd_transacao_financeira DROP NOT NULL;
 
 -- Schema legado Cotolengo: tipo/bandeira por FK numérico → id Tasy
 CREATE TABLE IF NOT EXISTS mapeamento_transacoes_tasy (
@@ -65,3 +72,25 @@ CREATE INDEX IF NOT EXISTS idx_registro_terminal_dt
 -- Cartão internacional (XML Stone <International>)
 ALTER TABLE registro_maquininha
     ADD COLUMN IF NOT EXISTS ie_internacional CHAR(1);
+
+-- Espelho Stone (CSV/XML) no portal, mesmo o que não entra em registro_maquininha / Tasy
+CREATE TABLE IF NOT EXISTS movimento_stone (
+    nr_sequencia            SERIAL PRIMARY KEY,
+    origem                  VARCHAR(10) NOT NULL,
+    id_stone                VARCHAR(80) NOT NULL,
+    nr_serie_maquininha     VARCHAR(64),
+    vl_transacao            NUMERIC(15, 2),
+    dt_movimentacao         TIMESTAMP,
+    reference_date          DATE,
+    status_origem           VARCHAR(40),
+    operation               VARCHAR(40),
+    publicado               CHAR(1) NOT NULL DEFAULT 'N',
+    ds_motivo               VARCHAR(240),
+    source                  VARCHAR(40),
+    dt_inclusao             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    dt_atualizacao          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_movimento_stone_origem_id UNIQUE (origem, id_stone)
+);
+
+CREATE INDEX IF NOT EXISTS idx_movimento_stone_ref
+    ON movimento_stone (reference_date, origem);

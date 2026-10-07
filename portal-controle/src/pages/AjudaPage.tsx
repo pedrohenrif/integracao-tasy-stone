@@ -35,15 +35,24 @@ const BLOCKS: HelpBlock[] = [
       "Ao abrir, carrega só o dia de ontem (paginado). Amplie as datas nos filtros para ver mais.",
       "Marque um ou mais tipos, status, bandeiras e caixas (ex.: crédito + PIX). Sem marca = todos.",
       "Use os filtros: data, caixa, status, tipo (crédito/débito/PIX), bandeira, ID Stone, etc.",
-      "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria, Reintegrar (9 — Oracle limpo após falha no FECHAR; reprocessar do zero).",
+      "Status comuns: Integrado (ok), Retry, DLQ, Sem Tesouraria, Só movto (11 — caixa sem diário, ex. Telemarketing), Reintegrar (9).",
       "Serve para conferir se um movimento do dia entrou e com qual valor/caixa.",
     ],
   },
   {
-    id: "erros",
-    title: "Erros / Sem Tesouraria",
+    id: "movimentos",
+    title: "Movimentos Stone",
     body: [
-      "Foco nos registros que falharam ou ficaram sem vínculo de tesouraria.",
+      "Lista o que veio no arquivo da Stone (CSV PIX e XML de cartão), mesmo o que não foi integrado.",
+      "Publicado = sim significa que entrou na fila. Não = máquina inativa/não cadastrada, status diferente de paid, etc.",
+      "Use para conferir o arquivo do dia sem depender do staging de integração.",
+    ],
+  },
+  {
+    id: "erros",
+    title: "Reprocessar",
+    body: [
+      "Foco nos registros que falharam, ficaram só movto ou sem vínculo de tesouraria.",
       "Causas frequentes: maquininha (serial) não cadastrada, caixa incorreto, mapeamento de bandeira/tipo faltando.",
       "Você pode editar serial/caixa e reprocessar o registro (ou vários selecionados).",
       "Isso republica só aquele registro na fila — não dispara nova busca na Stone.",
@@ -53,9 +62,10 @@ const BLOCKS: HelpBlock[] = [
     id: "maquininhas",
     title: "Maquininhas",
     body: [
-      "Cadastro do serial da máquina Stone ligado a um caixa do Tasy e à transação financeira.",
+      "Cadastro do serial da máquina Stone ligado a um caixa do Tasy e à transação financeira. Só as ativas (status A) são extraídas e integradas — inative no portal para parar de importar, sem lista no .env.",
+      "Caixas como Telemarketing (várias TF) podem ser marcados como só movimento: o Tasy recebe o movto sem caixa diário, e a TF da máquina pode ficar em branco.",
       "Use a busca e o filtro de caixa para achar um terminal. Serial já cadastrado não pode ser incluído de novo — o portal avisa e abre a edição.",
-      "Se o serial não existir aqui, a integração costuma cair em erro ou Sem Tesouraria.",
+      "Se o serial não existir ou estiver inativo, a extração não publica e a integração marca Ignorado (não grava no Tasy).",
       "Quando uma máquina nova entrar em uso, cadastre o serial assim que possível.",
     ],
   },
@@ -128,7 +138,7 @@ const BLOCKS: HelpBlock[] = [
     title: "Passo a passo do dia a dia (Financeiro)",
     body: [
       "1) Abra Integrações e filtre o dia / caixa / PIX ou cartão.",
-      "2) Se faltar movimento, confira Erros / Sem Tesouraria.",
+      "2) Se faltar movimento, confira Movimentos Stone e Reprocessar.",
       "3) Se o erro for serial ou caixa, ajuste em Maquininhas (ou edite no erro) e reprocesse o registro.",
       "4) Se for tipo/bandeira, revise Mapeamentos com apoio do admin/TI.",
       "5) Confira no Tasy o lançamento quando o status estiver Integrado.",
@@ -151,8 +161,9 @@ export function AjudaPage() {
       </header>
 
       <div className="callout">
-        Dúvida no dia a dia: comece por <strong>Integrações</strong> e{" "}
-        <strong>Erros / Sem Tesouraria</strong>. Extração manual e Scheduler ficam com o admin.
+        Dúvida no dia a dia: comece por <strong>Integrações</strong>,{" "}
+        <strong>Movimentos Stone</strong> e <strong>Reprocessar</strong>. Extração manual e
+        Scheduler ficam com o admin.
       </div>
 
       <div className="help-list">

@@ -30,7 +30,7 @@ export function LoginPage() {
         <div className="login-brand">
           <img src="/cotolengo.png" alt="Complexo de Saúde Pequeno Cotolengo" />
           <h1>Portal Stone → Tasy</h1>
-          <p className="muted login-sub">Acompanhe integrações, erros e filas</p>
+          <p className="muted login-sub">Integrações, movimentos Stone, reprocessar e filas</p>
         </div>
         <label>
           Usuário

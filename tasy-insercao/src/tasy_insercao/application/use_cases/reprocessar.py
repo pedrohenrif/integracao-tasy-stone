@@ -38,6 +38,7 @@ _STATUS_REPROCESSAVEIS = {
     StatusIntegracao.SEM_TESOURARIA.value,
     StatusIntegracao.CONFIRMACAO_PENDENTE.value,
     StatusIntegracao.IGNORADO.value,
+    StatusIntegracao.SOMENTE_MOVTO.value,
 }
 
 

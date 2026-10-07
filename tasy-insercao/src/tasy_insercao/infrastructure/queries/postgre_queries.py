@@ -4,9 +4,11 @@ SELECT_MAQUININHA_CONFIG = """
 SELECT
     ms.nr_serie_maquininha,
     ms.cd_caixa,
-    ms.cd_transacao_financeira
+    ms.cd_transacao_financeira,
+    COALESCE(c.ie_somente_movto, 'N')
 FROM
     maquininha_stone ms
+    JOIN caixas_tasy c ON c.cd_caixa = ms.cd_caixa
 WHERE
     UPPER(ms.nr_serie_maquininha) = UPPER(%(nr_serie_maquininha)s)
     AND ms.ie_status = 'A'

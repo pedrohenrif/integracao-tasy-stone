@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from tasy_insercao.infrastructure.auth.portal_acao_log import registrar_acao_log
 from tasy_insercao.infrastructure.persistence.catalog_queries import (
+    atualizar_caixa,
     atualizar_mapeamento,
     criar_mapeamento,
     listar_bandeiras,
@@ -43,9 +44,13 @@ def _ser(row: dict[str, Any]) -> dict[str, Any]:
 class MaquininhaBody(BaseModel):
     nr_serie_maquininha: str = Field(min_length=1, max_length=64)
     cd_caixa: int
-    cd_transacao_financeira: int
+    cd_transacao_financeira: int | None = None
     ds_maquininha: str | None = None
     ie_status: str = "A"
+
+
+class CaixaBody(BaseModel):
+    ie_somente_movto: str = "N"
 
 
 class MapeamentoBody(BaseModel):
@@ -71,9 +76,37 @@ async def get_maquininhas(_user: CurrentUser):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@router.patch("/caixas/{cd_caixa}")
+async def patch_caixa(user: CurrentUser, cd_caixa: int, body: CaixaBody):
+    try:
+        row = atualizar_caixa(cd_caixa=cd_caixa, ie_somente_movto=body.ie_somente_movto)
+        if not row:
+            raise HTTPException(status_code=404, detail="Caixa não encontrado")
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="cadastro_caixa",
+            obs=f"caixa={cd_caixa} | somente_movto={body.ie_somente_movto}",
+            depois=_ser(row),
+        )
+        return _ser(row)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/maquininhas")
 async def post_maquininha(user: CurrentUser, body: MaquininhaBody):
     try:
+        caixas = {int(c["cd_caixa"]): c for c in listar_caixas()}
+        caixa = caixas.get(int(body.cd_caixa)) or {}
+        somente = str(caixa.get("ie_somente_movto") or "N").upper() == "S"
+        if not somente and body.cd_transacao_financeira is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Transação financeira obrigatória neste caixa. Marque o caixa como só movto se não usar caixa diário.",
+            )
         row = upsert_maquininha(
             nr_serie_maquininha=body.nr_serie_maquininha,
             cd_caixa=body.cd_caixa,

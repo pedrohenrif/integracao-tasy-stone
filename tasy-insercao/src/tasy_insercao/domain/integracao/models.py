@@ -85,8 +85,10 @@ class StatusIntegracao(int, Enum):
     SEM_TESOURARIA = 8
     # FECHAR falhou: Oracle é removido; painel status 9 = reintegrar do zero
     CONFIRMACAO_PENDENTE = 9
-    # Não integra no Oracle: serial inativo / fora do piloto / sem caixa (policy ignore)
+    # Não integra no Oracle: serial inativo / não cadastrado / sem caixa (policy ignore)
     IGNORADO = 10
+    # Caixa com ie_somente_movto: MOVTO_CARTAO_CR sem caixa_receb / saldo diário
+    SOMENTE_MOVTO = 11
 
 
 class ResultadoIntegracao(BaseModel):

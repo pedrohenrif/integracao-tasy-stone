@@ -23,6 +23,7 @@ const STATUS = [
   { id: "8", label: "Sem Tesouraria" },
   { id: "9", label: "Reintegrar" },
   { id: "10", label: "Ignorado" },
+  { id: "11", label: "Só movto" },
   { id: "1", label: "Pendente" },
   { id: "2", label: "Processando" },
 ];
@@ -63,35 +64,47 @@ function ChipGroup({
   options,
   csv,
   onToggle,
+  collapsible = false,
 }: {
   title: string;
   hint?: string;
   options: Array<{ id: string; label: string }>;
   csv: string | undefined;
   onToggle: (id: string) => void;
+  collapsible?: boolean;
 }) {
   const n = tokens(csv).length;
+  const head = (
+    <div className="filters-group-head">
+      <strong>{title}</strong>
+      <span className="muted small">{n ? `${n} selecionado(s)` : hint || "todos"}</span>
+    </div>
+  );
+  const chips = (
+    <div className="filters-chips">
+      {options.map((opt) => {
+        const on = hasToken(csv, opt.id);
+        return (
+          <label key={opt.id} className={`chip-check${on ? " on" : ""}`}>
+            <input type="checkbox" checked={on} onChange={() => onToggle(opt.id)} />
+            <span>{opt.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+  if (collapsible) {
+    return (
+      <details className="filters-group filters-details">
+        <summary>{head}</summary>
+        {chips}
+      </details>
+    );
+  }
   return (
     <div className="filters-group">
-      <div className="filters-group-head">
-        <strong>{title}</strong>
-        <span className="muted small">{n ? `${n} selecionado(s)` : hint || "todos"}</span>
-      </div>
-      <div className="filters-chips">
-        {options.map((opt) => {
-          const on = hasToken(csv, opt.id);
-          return (
-            <label key={opt.id} className={`chip-check${on ? " on" : ""}`}>
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={() => onToggle(opt.id)}
-              />
-              <span>{opt.label}</span>
-            </label>
-          );
-        })}
-      </div>
+      {head}
+      {chips}
     </div>
   );
 }
@@ -179,6 +192,7 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
         options={BANDEIRAS}
         csv={value.bandeira}
         onToggle={(id) => toggle("bandeira", id)}
+        collapsible
       />
 
       <ChipGroup
@@ -190,6 +204,7 @@ export function FiltersBar({ value, caixas, onChange, onSubmit, showStatus = tru
         }))}
         csv={value.cd_caixa}
         onToggle={(id) => toggle("cd_caixa", id)}
+        collapsible
       />
 
       <div className="filters-actions">
