@@ -45,6 +45,8 @@ def test_caixa_somente_movto_nao_abre_caixa_receb():
     tasy.ensure_caixa_saldo_diario.assert_not_called()
     tasy.inserir_caixa_receb.assert_not_called()
     tasy.inserir_movto_cartao_sem_tesouraria.assert_called_once()
+    movto_params = tasy.inserir_movto_cartao_sem_tesouraria.call_args[0][0]
+    assert movto_params["ie_lib_caixa"] == "S"
     assert result.nr_seq_caixa_receb is None
     assert staging.update_status.call_args[0][1] == StatusIntegracao.SOMENTE_MOVTO.value
 

@@ -309,7 +309,7 @@ BEGIN
         1,
         SYSDATE,
         :dt_transacao,
-        'N',
+        :ie_lib_caixa,
         'L',
         :ie_tipo_cartao,
         'stone',

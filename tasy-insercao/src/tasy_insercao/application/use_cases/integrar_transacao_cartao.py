@@ -505,8 +505,14 @@ class IntegrarTransacaoCartao:
         )
         try:
             nr_seq_movto = self._inserir_movto(
-                tx, None, dt_saldo, sem_tesouraria=True, obs_prefix="SOMENTE_MOVTO"
+                tx,
+                None,
+                dt_saldo,
+                sem_tesouraria=True,
+                obs_prefix="SOMENTE_MOVTO",
+                ie_lib_caixa="S",
             )
+            obs = f"{obs} | nr_seq_movto={nr_seq_movto}"
             self.staging.update_status(
                 nr_seq_pg, StatusIntegracao.SOMENTE_MOVTO.value, obs
             )
@@ -623,6 +629,7 @@ class IntegrarTransacaoCartao:
         *,
         sem_tesouraria: bool,
         obs_prefix: str | None = None,
+        ie_lib_caixa: str = "N",
     ) -> int:
         tipo_api = map_tipo_para_api(tx.cd_tipo_transacao.value)
         bandeira = map_stone_brand(tx.cd_bandeira)
@@ -639,9 +646,10 @@ class IntegrarTransacaoCartao:
 
         vl = to_float_money(tx.vl_transacao)
         dt_venc = self._calcular_vencimento(tipo_api, dt_recebimento)
-        ds_obs = f"Maquininha - {tx.nr_serie_maquininha} | ID stone - {tx.id_stone}"
+        # ID no começo: DS_OBSERVACAO do Tasy corta o fim e a tela/SQL perdem o id_stone.
+        ds_obs = f"ID {tx.id_stone} | {tx.nr_serie_maquininha}"
         if sem_tesouraria:
-            ds_obs = f"{obs_prefix or 'SEM_TESOURARIA'} | {ds_obs}"
+            ds_obs = f"{ds_obs} | {obs_prefix or 'SEM_TESOURARIA'}"
         orig = (tx.cd_tipo_transacao.value or "").lower()
         if tipo_api == "pix":
             ds_obs = f"PIX | {ds_obs}"
@@ -690,6 +698,8 @@ class IntegrarTransacaoCartao:
             inserir = getattr(self.tasy, "inserir_movto_cartao_sem_tesouraria", None)
             if inserir is None:
                 raise RuntimeError("TasyRepository sem inserir_movto_cartao_sem_tesouraria")
+            lib = (ie_lib_caixa or "N").strip().upper()[:1]
+            params["ie_lib_caixa"] = "S" if lib == "S" else "N"
             return inserir(params)
 
         params["nr_seq_caixa_rec"] = nr_seq_caixa_rec
