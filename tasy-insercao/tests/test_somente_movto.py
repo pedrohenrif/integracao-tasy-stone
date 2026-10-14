@@ -52,6 +52,31 @@ def test_caixa_somente_movto_nao_abre_caixa_receb():
     assert staging.update_status.call_args[0][1] == StatusIntegracao.SOMENTE_MOVTO.value
 
 
+def test_ignorado_nao_trava_reprocesso_quando_caixa_vira_somente_movto():
+    staging = MagicMock()
+    tasy = MagicMock()
+    staging.get_by_id_stone.return_value = (7, StatusIntegracao.IGNORADO.value, "IGNORADO")
+    tasy.exists_movto_by_id_stone.return_value = False
+    staging.find_maquininha_config.return_value = {
+        "nr_serie_maquininha": "PB09218373216",
+        "cd_caixa": 13,
+        "cd_transacao_financeira": None,
+        "ie_somente_movto": "S",
+    }
+    staging.ensure_registro.return_value = 7
+    staging.get_bandeira_tasy.return_value = 19
+    tasy.inserir_movto_cartao_sem_tesouraria.return_value = 555
+
+    with patch(
+        "tasy_insercao.application.use_cases.integrar_transacao_cartao.motivo_ignorar",
+        return_value=None,
+    ):
+        result = IntegrarTransacaoCartao(staging, tasy).execute(_tx())
+
+    assert result.status == StatusIntegracao.SOMENTE_MOVTO
+    tasy.inserir_movto_cartao_sem_tesouraria.assert_called_once()
+
+
 def test_caixa_normal_sem_tf_e_ignorado():
     staging = MagicMock()
     tasy = MagicMock()

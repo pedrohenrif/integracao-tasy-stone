@@ -100,14 +100,7 @@ class IntegrarTransacaoCartao:
                 retryable=False,
                 nr_sequencia_pg=existente[0],
             )
-        if existente and existente[1] == StatusIntegracao.IGNORADO.value:
-            return ResultadoIntegracao(
-                id_stone=tx.id_stone,
-                status=StatusIntegracao.IGNORADO,
-                mensagem="Já ignorado (idempotente)",
-                retryable=False,
-                nr_sequencia_pg=existente[0],
-            )
+        # Status 10 não é definitivo: reprocesso/cadastro novo precisa tentar de novo.
 
         if existente and existente[1] in (
             StatusIntegracao.INTEGRADO.value,

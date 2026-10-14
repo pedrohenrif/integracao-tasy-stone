@@ -187,9 +187,11 @@ async def reprocessar_selecionados(
             try:
                 antes = _snapshot_registro(row)
                 evento, fluxo = _evento_from_registro(row)
-                await publisher.publish_main(evento, fluxo=fluxo)
                 obs = "Reprocessamento em lote solicitado pelo portal"
+                # Status 1 ANTES de publicar: senão o consumer grava 11 e o portal
+                # sobrescreve com 1, ou vê 10 e ignora (idempotente) sem inserir.
                 atualizar_status_registro(nr, StatusIntegracao.PENDENTE.value, obs)
+                await publisher.publish_main(evento, fluxo=fluxo)
                 depois = {**antes, "cd_status": StatusIntegracao.PENDENTE.value, "ds_obs_processo": obs}
                 registrar_acao_log(
                     user_id=user_id,

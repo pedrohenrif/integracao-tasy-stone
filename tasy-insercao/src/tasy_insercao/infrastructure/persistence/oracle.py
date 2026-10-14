@@ -145,7 +145,7 @@ class TasyOracleRepository:
     def exists_movto_by_id_stone(self, id_stone: str) -> bool:
         row = self.db.fetchone(
             ora.SELECT_MOVTO_POR_ID_STONE,
-            {"ds_observacao": f"%ID stone - {id_stone}%"},
+            {"ds_observacao": f"%{id_stone}%"},
         )
         return row is not None
 
@@ -153,7 +153,7 @@ class TasyOracleRepository:
         """Retorna nr_seq_caixa_rec + dt para retry do FECHAR, ou None."""
         row = self.db.fetchone(
             ora.SELECT_CAIXA_RECEB_PARA_CONFIRMAR,
-            {"ds_observacao": f"%ID stone - {id_stone}%"},
+            {"ds_observacao": f"%{id_stone}%"},
         )
         if not row:
             return None
