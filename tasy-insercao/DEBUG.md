@@ -15,6 +15,8 @@ O consumer **grava** o documento após o cartão. Para a tela do Tasy:
 | `nr_seq_saldo_caixa` / `nr_seq_caixa` | saldo e caixa |
 | `nr_seq_trans_financ` | **mesma** do `caixa_receb` (maquininha, ex. **930**) |
 | `vl_transacao` | **total** da venda (parcelado = valor cheio, não parcela) |
+| `movto_cartao_cr.ds_comprovante` | serial da maquininha (inserts novos) |
+| `caixa_receb.nm_usuario_nrec` | `Stone` = cartão; `Stone PIX` = PIX (recebimentos separados) |
 
 ---
 
@@ -22,9 +24,10 @@ O consumer **grava** o documento após o cartão. Para a tela do Tasy:
 
 Na tela **Erros / DLQ**:
 
-1. **Reprocessar (por linha)** — edita serial/caixa só neste registro e reenfileira (`POST /api/reprocessar/registro`). Só status 6/7.
+1. **Reprocessar (por linha)** — edita serial/caixa só neste registro e reenfileira (`POST /api/reprocessar/registro`). Só status 6/7/8/9/10/11.
 2. **Reprocessar selecionados** — lote sem edição (`POST /api/reprocessar/selecionados`). Status 5 é ignorado.
-3. **Reprocessar dia** — chama `stone-extracao` (`POST /api/reprocessar/dia`).
+3. **Reprocessar pendentes/erros do dia** — só status 1, 2, 6, 7, 9 (`POST /api/reprocessar/pendentes-dia`). Opcional `nr_serie`. Não chama a Stone.
+4. **Extrair dia (Dashboard, admin)** — chama `stone-extracao` (`POST /api/reprocessar/dia`).
 
 Auditoria: tela **Auditoria** / `GET /api/reprocessar/logs` (`portal_acao_log`).
 

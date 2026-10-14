@@ -9,6 +9,7 @@ from tasy_insercao.application.use_cases.reprocessar import (
     extrair_cartao_dia,
     importar_pix_csv,
     reprocessar_dia,
+    reprocessar_pendentes_dia,
     reprocessar_registro,
     reprocessar_selecionados,
 )
@@ -26,6 +27,7 @@ class ReprocessarDiaBody(BaseModel):
     """date: YYYY-MM-DD ou YYYYMMDD."""
 
     date: str
+    nr_serie: str | None = None
 
 
 class ReprocessarRegistroBody(BaseModel):
@@ -66,6 +68,22 @@ async def api_reprocessar_dia(body: ReprocessarDiaBody, user: AdminUser):
         return await reprocessar_dia(data_ref, user=user)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/pendentes-dia")
+async def api_reprocessar_pendentes_dia(body: ReprocessarDiaBody, user: CurrentUser):
+    """Reenfileira só pendente/retry/DLQ/reintegrar do dia. Não busca de novo na Stone."""
+    data_ref = _parse_ref_date(body.date)
+    try:
+        return await reprocessar_pendentes_dia(
+            data_ref,
+            nr_serie=body.nr_serie,
+            user=user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

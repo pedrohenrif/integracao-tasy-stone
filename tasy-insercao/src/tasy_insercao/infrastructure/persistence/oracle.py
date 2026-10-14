@@ -5,6 +5,7 @@ from typing import Any, Generator
 
 import oracledb
 
+from tasy_insercao.domain.integracao.models import nrec_por_fluxo
 from tasy_insercao.infrastructure.config.logging import get_logger
 from tasy_insercao.infrastructure.config.settings import settings
 from tasy_insercao.infrastructure.queries import oracle_queries as ora
@@ -204,21 +205,25 @@ class TasyOracleRepository:
         dt: str,
         cd_trans_fin: int,
         nr_serie_maquininha: str | None = None,
+        *,
+        fluxo: str = "cartao",
     ) -> int:
         """
-        Reusa o unico recebimento Stone aberto do saldo (caixa+dia); cria se nao houver.
+        Reusa o recebimento Stone aberto do saldo para o mesmo fluxo (cartão ou PIX).
 
-        1 caixa_receb por caixa/dia: todas as maquininhas (cartao/PIX) no mesmo recebimento.
-        nr_serie_maquininha e ignorado no agrupamento (mantido na assinatura por compat).
+        Cartão e PIX ficam em caixa_receb distintos (nm_usuario_nrec Stone vs Stone PIX)
+        para o FECHAR não estourar o comprovante de 4k no Tasy.
+        nr_serie_maquininha é ignorado no agrupamento (assinatura por compat).
         """
         _ = nr_serie_maquininha
+        nrec = nrec_por_fluxo(fluxo)
         row = self.db.fetchone(
             ora.SELECT_CAIXA_RECEB_ABERTO_STONE,
-            {"nr_seq_saldo_caixa": nr_seq_saldo},
+            {"nr_seq_saldo_caixa": nr_seq_saldo, "nm_usuario_nrec": nrec},
         )
         if row:
             return int(row[0])
-        return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin)
+        return self.inserir_caixa_receb(nr_seq_saldo, dt, cd_trans_fin, nm_usuario_nrec=nrec)
 
     def listar_caixa_receb_abertos_stone(
         self,
@@ -249,13 +254,21 @@ class TasyOracleRepository:
             )
         return out
 
-    def inserir_caixa_receb(self, nr_seq_saldo: int, dt: str, cd_trans_fin: int) -> int:
+    def inserir_caixa_receb(
+        self,
+        nr_seq_saldo: int,
+        dt: str,
+        cd_trans_fin: int,
+        *,
+        nm_usuario_nrec: str = "Stone",
+    ) -> int:
         return self.db.execute_returning(
             ora.INSERT_CAIXA_RECEB,
             {
                 "nr_seq_saldo_caixa": nr_seq_saldo,
                 "dt_recebimento": dt,
                 "nr_seq_trans_financ": cd_trans_fin,
+                "nm_usuario_nrec": nm_usuario_nrec or "Stone",
             },
         )
 

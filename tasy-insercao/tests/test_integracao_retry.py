@@ -55,6 +55,8 @@ def test_reintegra_quando_movto_tasy_cancelado():
     assert result.status == StatusIntegracao.INTEGRADO
     tasy.inserir_movto_cartao.assert_called_once()
     tasy.ensure_caixa_receb_aberto.assert_called_once()
+    movto_params = tasy.inserir_movto_cartao.call_args[0][0]
+    assert movto_params["ds_comprovante"] == "PB09231S72079"
 
 
 def test_retryable_connection_error():

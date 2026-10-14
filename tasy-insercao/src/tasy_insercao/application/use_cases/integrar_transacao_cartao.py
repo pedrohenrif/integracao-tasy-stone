@@ -11,6 +11,7 @@ from tasy_insercao.domain.integracao.filtro_piloto import (
 from tasy_insercao.domain.integracao.models import (
     ResultadoIntegracao,
     StatusIntegracao,
+    TipoTransacaoCartao,
     TransacaoCartao,
 )
 from tasy_insercao.domain.integracao.policies import (
@@ -28,9 +29,9 @@ logger = get_logger(__name__)
 
 class IntegrarTransacaoCartao:
     """
-    Use case: Caixa -> Dia -> Recebimento (1 por caixa/dia) ->
-    Cartao/PIX (N) -> Documento agregado (soma). Todas as maquininhas do caixa
-    no mesmo caixa_receb. FECHAR apos quiet period sem novo cartao/PIX nesse recebimento.
+    Use case: Caixa -> Dia -> Recebimento (1 cartão + 1 PIX por caixa/dia) ->
+    Movtos (N) -> Documento agregado (soma). Maquininhas do mesmo caixa compartilham
+    o recebimento do fluxo. PIX não mistura com cartão (limite 4k do comprovante no FECHAR).
     Sem maquininha ativa (ie_status=A): status IGNORADO (sem Oracle), salvo
     SEM_CAIXA_POLICY=insert (legado Sem Tesouraria).
     Idempotente por id_stone: PG status 5/8/10 só conta se ainda houver
@@ -216,7 +217,10 @@ class IntegrarTransacaoCartao:
             )
 
             nr_seq_saldo = self.tasy.ensure_caixa_saldo_diario(cd_caixa, dt_str)
-            # 1 recebimento aberto por caixa+dia; N cartoes/PIX (todas maquininhas)
+            fluxo_receb = (
+                "pix" if tx.cd_tipo_transacao == TipoTransacaoCartao.PIX else "cartao"
+            )
+            # 1 recebimento aberto por caixa+dia+fluxo (cartão separado de PIX)
             ensure_receb = getattr(self.tasy, "ensure_caixa_receb_aberto", None)
             if ensure_receb is not None:
                 nr_seq_receb = ensure_receb(
@@ -224,6 +228,7 @@ class IntegrarTransacaoCartao:
                     dt_str,
                     cd_trans_fin,
                     tx.nr_serie_maquininha,
+                    fluxo=fluxo_receb,
                 )
             else:
                 nr_seq_receb = self.tasy.inserir_caixa_receb(
@@ -680,6 +685,7 @@ class IntegrarTransacaoCartao:
                     "qt_parcelas": tx.qt_parcelas,
                     "nr_autorizacao": tx.cd_autorizacao or "",
                     "dt_primeira_parcela": dt_venc,
+                    "ds_comprovante": (tx.nr_serie_maquininha or "").strip()[:80],
                 }
             )
 
@@ -693,6 +699,7 @@ class IntegrarTransacaoCartao:
             "nr_seq_forma_pagto": nr_seq_forma_pagto,
             "nr_seq_trans_caixa": nr_seq_trans_caixa,
             "dt_primeira_parcela": dt_venc,
+            "ds_comprovante": (tx.nr_serie_maquininha or "").strip()[:80],
         }
         if sem_tesouraria:
             inserir = getattr(self.tasy, "inserir_movto_cartao_sem_tesouraria", None)

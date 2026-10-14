@@ -9,8 +9,8 @@ WHERE
     AND dt_saldo = TO_DATE(:dt_saldo, 'YYYY-MM-DD')
 """
 
-# Um recebimento Stone aberto por saldo diário (caixa + dia).
-# Todas as maquininhas do caixa compartilham o mesmo caixa_receb.
+# Um recebimento Stone aberto por saldo + fluxo (cartão vs PIX).
+# NVL: recibos antigos sem nrec entram no agrupamento de cartão.
 SELECT_CAIXA_RECEB_ABERTO_STONE = """
 SELECT nr_sequencia FROM (
     SELECT cr.nr_sequencia
@@ -18,6 +18,7 @@ SELECT nr_sequencia FROM (
     WHERE cr.nr_seq_saldo_caixa = :nr_seq_saldo_caixa
       AND cr.nm_usuario = 'stone'
       AND cr.dt_fechamento IS NULL
+      AND NVL(cr.nm_usuario_nrec, 'Stone') = :nm_usuario_nrec
     ORDER BY cr.nr_sequencia
 ) WHERE ROWNUM = 1
 """
@@ -191,7 +192,7 @@ INSERT INTO caixa_receb(
     :nr_seq_trans_financ,
     1075,
     SYSDATE,
-    'Stone',
+    :nm_usuario_nrec,
     'R'
 ) RETURNING nr_sequencia INTO :id_retornado
 """
@@ -255,6 +256,7 @@ BEGIN
         nr_autorizacao,
         nr_seq_forma_pagto,
         nr_seq_trans_caixa,
+        ds_comprovante,
         dt_liberacao
     ) VALUES (
         movto_cartao_cr_seq.NEXTVAL,
@@ -273,6 +275,7 @@ BEGIN
         :nr_autorizacao,
         :nr_seq_forma_pagto,
         :nr_seq_trans_caixa,
+        :ds_comprovante,
         SYSDATE
     ) RETURNING nr_sequencia INTO v_nr_seq_movto;
 
@@ -303,6 +306,7 @@ BEGIN
         nr_autorizacao,
         nr_seq_forma_pagto,
         nr_seq_trans_caixa,
+        ds_comprovante,
         dt_liberacao
     ) VALUES (
         movto_cartao_cr_seq.NEXTVAL,
@@ -321,6 +325,7 @@ BEGIN
         :nr_autorizacao,
         :nr_seq_forma_pagto,
         :nr_seq_trans_caixa,
+        :ds_comprovante,
         SYSDATE
     ) RETURNING nr_sequencia INTO v_nr_seq_movto;
 
@@ -350,6 +355,7 @@ BEGIN
         nr_seq_forma_pagto,
         nr_autorizacao,
         nr_seq_trans_caixa,
+        ds_comprovante,
         dt_liberacao
     ) VALUES (
         movto_cartao_cr_seq.NEXTVAL,
@@ -368,6 +374,7 @@ BEGIN
         6,
         :nr_autorizacao,
         :nr_seq_trans_caixa,
+        :ds_comprovante,
         SYSDATE
     ) RETURNING nr_sequencia INTO v_nr_seq_movto;
 

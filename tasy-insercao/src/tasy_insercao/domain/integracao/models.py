@@ -74,6 +74,15 @@ class EventoFilaPix(BaseModel):
     transaction: TransacaoPix
 
 
+NM_USUARIO_NREC_CARTAO = "Stone"
+NM_USUARIO_NREC_PIX = "Stone PIX"
+
+
+def nrec_por_fluxo(fluxo: str | None) -> str:
+    """Marca o caixa_receb: cartão e PIX não compartilham o mesmo recebimento."""
+    return NM_USUARIO_NREC_PIX if (fluxo or "").strip().lower() == "pix" else NM_USUARIO_NREC_CARTAO
+
+
 class StatusIntegracao(int, Enum):
     PENDENTE = 1
     PROCESSANDO = 2

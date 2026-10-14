@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import {
   caixasApi,
   registrosApi,
-  reprocessarDiaApi,
+  reprocessarPendentesDiaApi,
   reprocessarRegistroApi,
   reprocessarSelecionadosApi,
 } from "../api/client";
-import { useAuth } from "../auth/AuthContext";
 import { FiltersBar } from "../components/FiltersBar";
 import { RegistrosTable } from "../components/RegistrosTable";
 import type { Filtros, Registro } from "../types";
@@ -19,7 +18,6 @@ function detailMessage(err: unknown): string {
 type CaixaOpt = { cd_caixa: number; ds_caixa: string };
 
 export function ErrosPage() {
-  const { user } = useAuth();
   const [filtros, setFiltros] = useState<Filtros>({ cd_status: "7", limit: "200" });
   const [caixas, setCaixas] = useState<CaixaOpt[]>([]);
   const [rows, setRows] = useState<Registro[]>([]);
@@ -131,7 +129,7 @@ export function ErrosPage() {
     }
   }
 
-  async function onReprocessDia() {
+  async function onReprocessPendentesDia() {
     if (!dia) {
       setError("Informe a data do dia.");
       return;
@@ -140,24 +138,14 @@ export function ErrosPage() {
     setError("");
     setMsg("");
     try {
-      const res = await reprocessarDiaApi(dia);
-      const pub = res.published_count ?? 0;
-      const extra = res.stone_message || "";
-      const pixPart = res.pix?.error
-        ? ` | PIX falha: ${res.pix.error}`
-        : res.pix?.message
-          ? ` | PIX: ${res.pix.message}`
-          : "";
+      const serial = (filtros.nr_serie || "").trim();
+      const res = await reprocessarPendentesDiaApi(dia, serial || undefined);
       setMsg(
-        `Dia ${res.reference_date}: cartão ${pub} publicadas` +
-          (res.parsed_count != null ? ` (${res.parsed_count} lidas)` : "") +
-          (extra ? ` — ${extra}` : "") +
-          pixPart,
+        res.mensagem ||
+          `Dia ${res.reference_date}: reenfileirados ${res.enfileirados} pendente(s)/erro(s).`,
       );
-      if (res.pix?.error) {
-        setError(`Cartão ok; PIX falhou: ${res.pix.error}`);
-      } else if (pub === 0) {
-        setError(extra || "Stone não retornou transações para esta data.");
+      if (res.enfileirados === 0) {
+        setError("Nenhum pendente/retry/DLQ/reintegrar nesse dia (integrados não são tocados).");
       }
       await load();
     } catch (e) {
@@ -189,23 +177,24 @@ export function ErrosPage() {
           </button>
           <span className="muted small">Republica na fila a partir do staging</span>
         </div>
-        {user?.admin && (
-          <div className="reprocess-group">
-            <label className="reprocess-date">
-              Dia
-              <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
-            </label>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={busy || !dia}
-              onClick={() => void onReprocessDia()}
-            >
-              Reprocessar dia (cartão + PIX)
-            </button>
-            <span className="muted small">Cartão na fila + solicitação PIX (webhook)</span>
-          </div>
-        )}
+        <div className="reprocess-group">
+          <label className="reprocess-date">
+            Dia
+            <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
+          </label>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={busy || !dia}
+            onClick={() => void onReprocessPendentesDia()}
+          >
+            Reprocessar pendentes/erros do dia
+          </button>
+          <span className="muted small">
+            Só retry, DLQ, pendente e reintegrar. Não busca de novo na Stone. Se o filtro Serial
+            estiver preenchido, vale só esse terminal. Integrado (5) não entra.
+          </span>
+        </div>
       </div>
 
       <FiltersBar value={filtros} caixas={caixas} onChange={setFiltros} onSubmit={() => void load()} />

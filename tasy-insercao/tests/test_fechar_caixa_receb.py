@@ -58,7 +58,7 @@ def test_unifica_recebimento_e_documento_sem_fechar_automatico():
     assert result.status == StatusIntegracao.INTEGRADO
     assert order == ["receb", "movto", "doc"]
     tasy.ensure_caixa_receb_aberto.assert_called_once_with(
-        50, "2026-07-08", 123, "PB09231S72079"
+        50, "2026-07-08", 123, "PB09231S72079", fluxo="cartao"
     )
     tasy.upsert_documento_agregado.assert_called_once()
     doc_kw = tasy.upsert_documento_agregado.call_args.kwargs
@@ -81,7 +81,7 @@ def test_segunda_tx_mesmo_serial_reusa_mesmo_recebimento():
     assert result.status == StatusIntegracao.INTEGRADO
     assert result.nr_seq_caixa_receb == 88
     tasy.ensure_caixa_receb_aberto.assert_called_once_with(
-        50, "2026-07-08", 123, "PB09231S72079"
+        50, "2026-07-08", 123, "PB09231S72079", fluxo="cartao"
     )
     assert tasy.upsert_documento_agregado.call_args.kwargs["nr_seq_caixa_rec"] == 88
     tasy.fechar_caixa_receb.assert_not_called()
@@ -105,6 +105,39 @@ def test_dois_seriais_mesmo_caixa_mesmo_recebimento():
     assert tasy.ensure_caixa_receb_aberto.call_count == 2
     docs = [c.kwargs["nr_seq_caixa_rec"] for c in tasy.upsert_documento_agregado.call_args_list]
     assert docs == [88, 88]
+
+
+def test_pix_abre_recebimento_separado_do_cartao():
+    staging, tasy = _setup_ok()
+
+    def _ensure(*_a, **k):
+        return 201 if k.get("fluxo") == "pix" else 88
+
+    tasy.ensure_caixa_receb_aberto.side_effect = _ensure
+    tasy.inserir_movto_cartao.side_effect = [77, 78]
+    tasy.upsert_documento_agregado.side_effect = [7.0, 40.0]
+
+    uc = IntegrarTransacaoCartao(staging, tasy)
+    r_card = uc.execute(_tx("id-card"))
+    r_pix = uc.execute(
+        TransacaoCartao(
+            id_stone="id-pix",
+            vl_transacao=Decimal("40"),
+            dt_movimentacao=datetime(2026, 7, 8, 8, 0, 0),
+            nr_serie_maquininha="PB09231S72079",
+            cd_autorizacao="E2E1",
+            qt_parcelas=1,
+            ie_transacao_parcelada=False,
+            cd_tipo_transacao=TipoTransacaoCartao.PIX,
+            cd_bandeira=None,
+        )
+    )
+
+    assert r_card.nr_seq_caixa_receb == 88
+    assert r_pix.nr_seq_caixa_receb == 201
+    fluxos = [c.kwargs.get("fluxo") for c in tasy.ensure_caixa_receb_aberto.call_args_list]
+    assert fluxos == ["cartao", "pix"]
+
 
 def test_fechar_falha_purge_so_se_unico_movto():
     staging, tasy = _setup_ok()

@@ -41,6 +41,15 @@ _STATUS_REPROCESSAVEIS = {
     StatusIntegracao.SOMENTE_MOVTO.value,
 }
 
+# Botão "pendentes do dia": só erro/pendente — não republica integrado (5) nem só movto (11).
+_STATUS_PENDENTES_ERRO = {
+    StatusIntegracao.PENDENTE.value,
+    StatusIntegracao.PROCESSANDO.value,
+    StatusIntegracao.ERRO_RETRY.value,
+    StatusIntegracao.ERRO_DEFINITIVO.value,
+    StatusIntegracao.CONFIRMACAO_PENDENTE.value,
+}
+
 
 def _as_datetime(value: Any) -> datetime:
     if isinstance(value, datetime):
@@ -580,25 +589,90 @@ async def extrair_cartao_dia(
     }
 
 
+async def reprocessar_pendentes_dia(
+    data_ref: date,
+    *,
+    nr_serie: str | None = None,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Reenfileira só pendente/retry/DLQ/reintegrar do dia (opcionalmente um serial).
+    Não dispara extração na Stone — não republica o que já está integrado.
+    """
+    reenq = await _reenfileirar_pendentes_do_dia(
+        data_ref, nr_serie=nr_serie, user=user
+    )
+    user_id, login = _user_meta(user)
+    serial = (nr_serie or "").strip() or None
+    obs = (
+        f"Pendentes {data_ref.isoformat()}"
+        + (f" | serial={serial}" if serial else "")
+        + f" | enfileirados={reenq.get('enfileirados', 0)}"
+    )
+    registrar_acao_log(
+        user_id=user_id,
+        login=login,
+        acao="reprocessar_pendentes_dia",
+        id_stone=None,
+        antes=None,
+        depois={
+            "reference_date": data_ref.isoformat(),
+            "nr_serie": serial,
+            "enfileirados": reenq.get("enfileirados"),
+            "erros": len(reenq.get("erros") or []),
+        },
+        obs=obs[:500],
+    )
+    mensagem = (
+        f"Dia {data_ref.isoformat()}: reenfileirados {reenq.get('enfileirados', 0)} "
+        "pendente(s)/erro(s). Integrados não foram tocados."
+    )
+    if serial:
+        mensagem = f"{mensagem} Serial={serial}."
+    return {
+        "reference_date": data_ref.isoformat(),
+        "enfileirados": reenq.get("enfileirados", 0),
+        "ids_stone": reenq.get("ids_stone") or [],
+        "ignorados": reenq.get("ignorados") or [],
+        "erros": reenq.get("erros") or [],
+        "mensagem": mensagem,
+        "mode": "pendentes_dia",
+    }
+
+
 async def _reenfileirar_pendentes_do_dia(
     data_ref: date,
     *,
+    nr_serie: str | None = None,
     user: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Reenfileira registros do dia que não estão integrados (status 5)."""
-    rows = listar_registros(
-        FiltrosPainel(
-            data_de=data_ref,
-            data_ate=data_ref,
-            limit=2000,
-            offset=0,
+    """Reenfileira só status pendente/erro do dia (nunca status 5)."""
+    serial = (nr_serie or "").strip() or None
+    status_csv = ",".join(str(s) for s in sorted(_STATUS_PENDENTES_ERRO))
+    nrs: list[int] = []
+    offset = 0
+    page = 1000
+    while offset <= 10000:
+        rows = listar_registros(
+            FiltrosPainel(
+                data_de=data_ref,
+                data_ate=data_ref,
+                nr_serie=serial,
+                cd_status=status_csv,
+                limit=page,
+                offset=offset,
+            )
         )
-    )
-    nrs = [
-        int(r["nr_sequencia"])
-        for r in rows
-        if int(r.get("cd_status") or 0) != StatusIntegracao.INTEGRADO.value
-    ]
+        if not rows:
+            break
+        nrs.extend(
+            int(r["nr_sequencia"])
+            for r in rows
+            if int(r.get("cd_status") or 0) in _STATUS_PENDENTES_ERRO
+        )
+        if len(rows) < page:
+            break
+        offset += page
     if not nrs:
         return {"enfileirados": 0, "ids_stone": [], "ignorados": [], "erros": []}
 

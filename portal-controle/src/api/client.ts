@@ -225,6 +225,19 @@ export async function reprocessarSelecionadosApi(nr_sequencias: number[]) {
   });
 }
 
+export async function reprocessarPendentesDiaApi(date: string, nr_serie?: string) {
+  return request<{
+    reference_date: string;
+    enfileirados: number;
+    ids_stone: string[];
+    mensagem?: string;
+    erros: Array<{ nr_sequencia: number; id_stone?: string; erro: string }>;
+  }>("/api/reprocessar/pendentes-dia", {
+    method: "POST",
+    body: JSON.stringify({ date, nr_serie: nr_serie || undefined }),
+  });
+}
+
 export async function reprocessarDiaApi(date: string) {
   return request<{
     reference_date: string;

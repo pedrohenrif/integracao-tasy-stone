@@ -66,6 +66,8 @@ def test_sem_tesouraria_insere_quando_policy_insert():
 
     assert result.status == StatusIntegracao.SEM_TESOURARIA
     tasy.inserir_movto_cartao_sem_tesouraria.assert_called_once()
+    movto_params = tasy.inserir_movto_cartao_sem_tesouraria.call_args[0][0]
+    assert movto_params["ds_comprovante"] == "SERIAL_NOVO_XYZ"
     assert staging.update_status.call_args[0][1] == StatusIntegracao.SEM_TESOURARIA.value
 
 

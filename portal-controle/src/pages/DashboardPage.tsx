@@ -165,8 +165,8 @@ export function DashboardPage() {
               Extrair cartão + PIX do dia
             </button>
             <span className="muted small">
-              PIX → webhook (mesmo vazio) → cartão; 1 recebimento/caixa; confirma ~5 min
-              após o lote parar de integrar. Só D-1 via Stone.
+              Busca o dia na Stone (PIX webhook + cartão) e publica na fila. Integrados não
+              são republicados. Para só retry/DLQ, use Reprocessar → pendentes do dia.
             </span>
           </div>
           <div className="reprocess-group">

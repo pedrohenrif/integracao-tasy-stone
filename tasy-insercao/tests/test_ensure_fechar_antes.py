@@ -28,7 +28,9 @@ def test_ensure_cria_quando_nao_ha_aberto():
     nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 270, "SERIAL-B")
 
     assert nr == 99
-    repo.inserir_caixa_receb.assert_called_once_with(50, "2026-08-23", 270)
+    repo.inserir_caixa_receb.assert_called_once_with(
+        50, "2026-08-23", 270, nm_usuario_nrec="Stone"
+    )
 
 
 def test_ensure_dois_seriais_mesmo_saldo_reusam_mesmo():
@@ -43,3 +45,19 @@ def test_ensure_dois_seriais_mesmo_saldo_reusam_mesmo():
     assert a == 88
     assert b == 88
     repo.inserir_caixa_receb.assert_not_called()
+
+
+def test_ensure_pix_nao_reusa_recebimento_de_cartao():
+    db = MagicMock()
+    repo = TasyOracleRepository(db)
+    repo.inserir_caixa_receb = MagicMock(return_value=201)
+    db.fetchone.return_value = None
+
+    nr = repo.ensure_caixa_receb_aberto(50, "2026-08-23", 270, "SERIAL-A", fluxo="pix")
+
+    assert nr == 201
+    repo.inserir_caixa_receb.assert_called_once_with(
+        50, "2026-08-23", 270, nm_usuario_nrec="Stone PIX"
+    )
+    params = db.fetchone.call_args[0][1]
+    assert params["nm_usuario_nrec"] == "Stone PIX"
