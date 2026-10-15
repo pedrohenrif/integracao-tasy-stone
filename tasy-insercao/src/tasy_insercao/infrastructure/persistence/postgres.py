@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from typing import Any, Generator
 
@@ -66,6 +67,47 @@ class PostgresDB:
         with self.cursor() as cur:
             cur.execute(sql, params or {})
             return cur.fetchone()
+
+    def ping(self) -> None:
+        with self.cursor() as cur:
+            cur.execute("SELECT 1")
+
+
+def ping_postgres() -> None:
+    db = PostgresDB()
+    try:
+        db.ping()
+    finally:
+        db.close()
+
+
+async def wait_postgres_ready(stop_event: asyncio.Event | None = None) -> None:
+    """Espera o Postgres aceitar conexão (boot da VM / NSSM sobe o consumer cedo)."""
+    delay = max(1, int(settings.CONSUMER_RECONNECT_DELAY_SECONDS or 5))
+    attempt = 0
+    while True:
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Consumer parado antes do Postgres ficar pronto")
+        attempt += 1
+        try:
+            await asyncio.to_thread(ping_postgres)
+            logger.info("Postgres pronto | tentativa=%s", attempt)
+            return
+        except Exception as exc:
+            logger.warning(
+                "Postgres ainda não aceita conexão | tentativa=%s | retry em %ss | %s",
+                attempt,
+                delay,
+                exc,
+            )
+            if stop_event is None:
+                await asyncio.sleep(delay)
+                continue
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                continue
+            raise RuntimeError("Consumer parado antes do Postgres ficar pronto") from exc
 
 
 class StagingPostgresRepository:

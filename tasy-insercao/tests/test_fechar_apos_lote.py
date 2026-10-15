@@ -4,6 +4,24 @@ from unittest.mock import MagicMock
 from tasy_insercao.infrastructure.messaging import fechar_apos_lote as fal
 
 
+def test_desligado_nao_agenda(monkeypatch):
+    monkeypatch.setattr(fal.settings, "FECHAR_APOS_LOTE_ENABLED", False)
+    confirmar = MagicMock(return_value=0.0)
+
+    async def _run() -> None:
+        fal.schedule_fechar_apos_lote(
+            nr_seq_caixa_rec=10,
+            dt_recebimento="2026-10-04",
+            confirmar_fn=confirmar,
+            fluxo="cartao",
+        )
+        await asyncio.sleep(0.2)
+
+    asyncio.run(_run())
+    confirmar.assert_not_called()
+    assert fal._pending == {}
+
+
 def test_remarca_e_fecha_apos_quiet(monkeypatch):
     monkeypatch.setattr(fal.settings, "FECHAR_APOS_LOTE_ENABLED", True)
     monkeypatch.setattr(fal.settings, "FECHAR_APOS_LOTE_SECONDS", 1)

@@ -31,6 +31,7 @@ from tasy_insercao.infrastructure.persistence.oracle import OracleDB, TasyOracle
 from tasy_insercao.infrastructure.persistence.postgres import (
     PostgresDB,
     StagingPostgresRepository,
+    wait_postgres_ready,
 )
 
 logger = get_logger(__name__)
@@ -283,6 +284,7 @@ async def _heartbeat_loop(stop_event: asyncio.Event) -> None:
 async def _run_session(stop_event: asyncio.Event) -> None:
     """Uma sessão Rabbit: connect -> consume -> espera stop ou queda da conexão."""
     global _retry_publisher
+    await wait_postgres_ready(stop_event)
     connection = await connect_rabbitmq()
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=1)

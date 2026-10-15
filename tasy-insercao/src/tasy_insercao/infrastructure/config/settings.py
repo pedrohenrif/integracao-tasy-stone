@@ -63,8 +63,8 @@ class Settings(BaseSettings):
     PORTAL_INTERNAL_TOKEN: str = ""
 
     # FECHAR o recebimento unificado (1 por caixa) apos quiet period sem novo cartao/PIX.
-    # Cada insert remarca o timer — so confirma depois que o lote (cartao+PIX) assentou.
-    FECHAR_APOS_LOTE_ENABLED: bool = True
+    # Operação atual: o caixa confirma no Tasy. true só se o Financeiro pedir de volta.
+    FECHAR_APOS_LOTE_ENABLED: bool = False
     FECHAR_APOS_LOTE_SECONDS: int = 300  # 5 min apos o ultimo insert nesse recebimento
     # Antes do FECHAR: exige staging do caixa/dia sem pendente/retry/processando (1,2,6,9).
     FECHAR_REQUIRE_STAGING_OK: bool = True
