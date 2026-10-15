@@ -528,6 +528,35 @@ export type MovimentoStone = {
   source: string | null;
 };
 
+export async function pixBackupApi(date: string) {
+  const p = new URLSearchParams({ date });
+  return request<{
+    reference_date: string;
+    has_csv: boolean;
+    backup_enabled?: boolean;
+    dir?: string | null;
+    files?: Array<{ name: string; bytes: number; path: string }>;
+    conferencia?: {
+      publicados?: number;
+      fora_piloto?: number;
+      ok?: boolean;
+      alerta?: string | null;
+      source?: string;
+      at?: string;
+    } | null;
+  }>(`/api/reprocessar/pix-backup?${p.toString()}`);
+}
+
+export async function espelharPixBackupApi(date: string) {
+  const p = new URLSearchParams({ date });
+  return request<{
+    reference_date: string;
+    linhas: number;
+    upserted: number;
+    mensagem?: string;
+  }>(`/api/reprocessar/pix-espelhar?${p.toString()}`, { method: "POST" });
+}
+
 export async function movimentosStoneApi(filtros: {
   data_de?: string;
   data_ate?: string;

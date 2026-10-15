@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { movimentosStoneApi, type MovimentoStone } from "../api/client";
+import { espelharPixBackupApi, movimentosStoneApi, pixBackupApi, type MovimentoStone } from "../api/client";
 import { dataOntemISO } from "../utils/dates";
 
 function money(v: number) {
@@ -22,7 +22,20 @@ export function MovimentosStonePage() {
     soma_valor?: number;
   }>({});
   const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [busyEspelho, setBusyEspelho] = useState(false);
+  const [pixBackup, setPixBackup] = useState<{
+    has_csv: boolean;
+    conferencia?: {
+      publicados?: number;
+      fora_piloto?: number;
+      ok?: boolean;
+      alerta?: string | null;
+      source?: string;
+      at?: string;
+    } | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -39,12 +52,33 @@ export function MovimentosStonePage() {
       });
       setRows(data.items || []);
       setResumo(data.resumo || {});
+      try {
+        const backup = await pixBackupApi(dataDe);
+        setPixBackup(backup);
+      } catch {
+        setPixBackup(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar");
     } finally {
       setLoading(false);
     }
   }, [dataDe, dataAte, origem, publicado, serie, idStone]);
+
+  async function onCarregarCsvVm() {
+    setBusyEspelho(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await espelharPixBackupApi(dataDe);
+      setMsg(res.mensagem || `Carregadas ${res.upserted} linha(s) do CSV.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar CSV da VM");
+    } finally {
+      setBusyEspelho(false);
+    }
+  }
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -59,6 +93,24 @@ export function MovimentosStonePage() {
           (máquina inativa/não cadastrada, status diferente de paid, etc.). Não é o staging de integração.
         </p>
       </header>
+      {msg && <p className="ok-msg">{msg}</p>}
+      {pixBackup?.has_csv && (
+        <p className="muted">
+          CSV PIX de {dataDe} está na VM
+          {pixBackup.conferencia
+            ? ` · publicados ${pixBackup.conferencia.publicados ?? "—"} · fora do cadastro ${pixBackup.conferencia.fora_piloto ?? "—"}`
+            : ""}
+          .{" "}
+          <button
+            type="button"
+            className={`btn${busyEspelho ? " btn-busy" : ""}`}
+            disabled={busyEspelho}
+            onClick={() => void onCarregarCsvVm()}
+          >
+            {busyEspelho ? "Carregando…" : "Carregar relação do CSV"}
+          </button>
+        </p>
+      )}
       <form
         className="filters"
         onSubmit={(e) => {
@@ -131,8 +183,9 @@ export function MovimentosStonePage() {
         <div className="empty-state">
           <strong>Nenhum movimento neste filtro</strong>
           <p className="muted">
-            Aparece após o webhook PIX ou a extração de cartão (exige PORTAL_INTERNAL_TOKEN nos dois
-            .env).
+            {pixBackup?.has_csv
+              ? "O arquivo está na VM. Clique em Carregar relação do CSV — não integra de novo no Tasy."
+              : "Ainda não há CSV PIX deste dia na VM (webhook ~04:50 do dia seguinte). Cartão aparece após extrair no Dashboard."}
           </p>
         </div>
       ) : (

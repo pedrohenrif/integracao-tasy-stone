@@ -29,6 +29,7 @@ from tasy_insercao.infrastructure.persistence.debug_queries import (
     listar_registros,
     listar_registros_por_ids,
 )
+from tasy_insercao.infrastructure.persistence.movimento_stone import upsert_movimentos
 
 logger = get_logger(__name__)
 
@@ -534,6 +535,74 @@ async def importar_pix_csv(
             f"PIX CSV {iso}: publicados={published}. "
             "Depois extraia o cartão do mesmo dia."
         ),
+    }
+
+
+async def consultar_pix_backup(data_ref: date) -> dict[str, Any]:
+    iso = data_ref.strftime("%Y-%m-%d")
+    base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
+    url = f"{base}/pix/backup/{iso}"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.get(url)
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"stone-extracao inacessível em {base}: {exc}."
+            ) from exc
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Backup PIX falhou: {resp.text[:400]}")
+    body = resp.json()
+    files = body.get("files") or []
+    has_csv = any(str(f.get("name") or "").endswith(".csv") for f in files)
+    return {
+        "reference_date": iso,
+        "has_csv": has_csv,
+        "backup_enabled": body.get("backup_enabled"),
+        "dir": body.get("dir"),
+        "files": files,
+        "conferencia": body.get("conferencia"),
+    }
+
+
+async def espelhar_pix_backup(
+    data_ref: date,
+    *,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Lê o CSV PIX da VM e grava em movimento_stone. Não publica na fila."""
+    iso = data_ref.strftime("%Y-%m-%d")
+    base = settings.STONE_EXTRACAO_BASE_URL.rstrip("/")
+    url = f"{base}/pix/backup/{iso}/linhas"
+    user_id, login = _user_meta(user)
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.get(url)
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"stone-extracao inacessível em {base}: {exc}."
+            ) from exc
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Linhas PIX backup falhou: {resp.text[:400]}")
+    body = resp.json()
+    if not body.get("has_csv"):
+        raise RuntimeError(f"Não há CSV PIX na VM para {iso}.")
+    items = body.get("items") or []
+    n = upsert_movimentos(items)
+    registrar_acao_log(
+        user_id=user_id,
+        login=login,
+        acao="espelhar_pix_backup",
+        id_stone=None,
+        depois={"reference_date": iso, "linhas": len(items), "upserted": n},
+        obs=f"Espelho CSV PIX {iso} | linhas={len(items)} | upsert={n}",
+    )
+    return {
+        "reference_date": iso,
+        "linhas": len(items),
+        "upserted": n,
+        "has_csv": True,
+        "conferencia": body.get("conferencia"),
+        "mensagem": f"Relação PIX {iso}: {n} linha(s) na tela Movimentos Stone.",
     }
 
 

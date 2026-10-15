@@ -17,7 +17,11 @@ async def enviar_movimentos_stone(items: list[dict[str, Any]]) -> None:
     base = (settings.PORTAL_BASE_URL or "").rstrip("/")
     token = (settings.PORTAL_INTERNAL_TOKEN or "").strip()
     if not base or not token:
-        logger.debug("Movimentos portal ignorados (PORTAL_BASE_URL/TOKEN vazios) | n=%s", len(items))
+        logger.warning(
+            "Movimentos portal ignorados (PORTAL_BASE_URL/TOKEN vazios) | n=%s. "
+            "A tela Movimentos Stone fica vazia até configurar o token nos dois .env.",
+            len(items),
+        )
         return
     url = f"{base}/interno/movimentos-stone"
     batch = 400

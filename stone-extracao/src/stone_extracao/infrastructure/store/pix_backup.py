@@ -108,6 +108,67 @@ def ler_pix_conferencia(iso_or_ymd: str) -> dict[str, Any] | None:
     return None
 
 
+def latest_pix_csv_path(iso_or_ymd: str) -> Path | None:
+    ymd = (iso_or_ymd or "").replace("-", "")[:8]
+    if len(ymd) != 8:
+        return None
+    dest = pix_dir_for_date(ymd) / f"stone_pix_{ymd}_latest.csv"
+    return dest if dest.is_file() else None
+
+
+def linhas_pix_backup(iso_or_ymd: str) -> dict[str, Any]:
+    """Lê o CSV gravado na VM e monta as linhas da tela Movimentos Stone (sem publicar fila)."""
+    from stone_extracao.infrastructure.parsers.pix_csv import parse_pix_csv_with_stats
+
+    listing = listar_pix_backup(iso_or_ymd)
+    ymd = str(listing.get("date") or "")
+    path = latest_pix_csv_path(ymd)
+    if path is None:
+        return {**listing, "has_csv": False, "parsed_count": 0, "items": []}
+
+    parsed = parse_pix_csv_with_stats(path.read_bytes())
+    conf = listing.get("conferencia") if isinstance(listing.get("conferencia"), dict) else {}
+    published_ids = {
+        str(x).strip() for x in (conf.get("ids_publicados") or []) if str(x).strip()
+    }
+    iso = f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}" if len(ymd) == 8 else None
+    items: list[dict[str, Any]] = []
+    for row in parsed.portal_rows:
+        sid = str(row.get("id_stone") or "").strip()
+        if not sid:
+            continue
+        skip = row.get("skip_reason")
+        if published_ids:
+            publicado = sid in published_ids
+            motivo = None if publicado else (str(skip) if skip else "fora_piloto")
+        else:
+            publicado = skip is None
+            motivo = str(skip) if skip else None
+        amount = row.get("vl_transacao")
+        items.append(
+            {
+                "origem": "pix",
+                "id_stone": sid,
+                "nr_serie_maquininha": row.get("nr_serie_maquininha"),
+                "vl_transacao": str(amount) if amount is not None else None,
+                "dt_movimentacao": row.get("dt_movimentacao"),
+                "reference_date": row.get("reference_date") or iso,
+                "status_origem": row.get("status_origem"),
+                "operation": row.get("operation"),
+                "publicado": "S" if publicado else "N",
+                "ds_motivo": motivo,
+                "source": str(conf.get("source") or "csv_backup")[:40],
+            }
+        )
+    return {
+        **listing,
+        "has_csv": True,
+        "csv_path": str(path),
+        "parsed_count": len(items),
+        "items": items,
+    }
+
+
 def listar_pix_backup(iso_or_ymd: str) -> dict[str, Any]:
     """Conferência + arquivos CSV gravados na VM para o dia."""
     ymd = (iso_or_ymd or "").replace("-", "")[:8]

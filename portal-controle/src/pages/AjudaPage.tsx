@@ -64,7 +64,8 @@ const BLOCKS: HelpBlock[] = [
       "Lista o que veio no arquivo da Stone (CSV PIX e XML de cartão), mesmo o que não foi integrado.",
       "Publicado = sim: entrou na fila. Não: máquina inativa/não cadastrada, status diferente de paid, etc.",
       "Se o valor existe aqui e não em Integrações, o arquivo chegou e a integração falhou ou ignorou — vá em Reprocessar ou Maquininhas.",
-      "Se não existe nem aqui, a extração não puxou (máquina inativa, dia errado, ou PIX ainda não veio no webhook).",
+      "Se a lista PIX estiver vazia mas o CSV já chegou na VM, use Carregar relação do CSV. Isso só preenche a tela — não lança de novo no Tasy.",
+      "Se não existe nem o arquivo na VM, o webhook daquele dia não gravou (máquina inativa, dia errado, ou PIX ainda não veio).",
     ],
   },
   {

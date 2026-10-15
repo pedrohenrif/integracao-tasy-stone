@@ -48,7 +48,7 @@ from stone_extracao.infrastructure.stone.conciliation_client import (
 )
 from stone_extracao.infrastructure.stone.pix_client import PixFetchError, StonePixClient
 from stone_extracao.infrastructure.store.filtro_seriais import resolve_terminals
-from stone_extracao.infrastructure.store.pix_backup import listar_pix_backup
+from stone_extracao.infrastructure.store.pix_backup import linhas_pix_backup, listar_pix_backup
 from stone_extracao.infrastructure.store.pix_webhook_inbox import listar_hits, registrar_hit
 from stone_extracao.infrastructure.store.ultima_extracao import salvar_extracao
 from stone_extracao.interfaces.api.painel import router as painel_router
@@ -735,17 +735,27 @@ async def pix_webhook_inbox(limit: int = Query(default=20, ge=1, le=50)):
     return listar_hits(limit=limit)
 
 
+def _pix_backup_date(date: str) -> str:
+    cleaned = (date or "").strip()
+    digits = cleaned.replace("-", "")
+    if len(digits) != 8 or not digits.isdigit():
+        raise HTTPException(status_code=400, detail="date deve ser YYYY-MM-DD ou YYYYMMDD")
+    return cleaned
+
+
+@app.get("/pix/backup/{date}/linhas")
+async def pix_backup_linhas(date: str):
+    """Linhas do CSV PIX da VM para espelhar no portal (não publica na fila)."""
+    return linhas_pix_backup(_pix_backup_date(date))
+
+
 @app.get("/pix/backup/{date}")
 async def pix_backup_do_dia(date: str):
     """
     Conferência do CSV PIX gravado na VM (data/xml_backup/pix/YYYY/YYYYMMDD/).
     date = YYYY-MM-DD ou YYYYMMDD.
     """
-    cleaned = (date or "").strip()
-    digits = cleaned.replace("-", "")
-    if len(digits) != 8 or not digits.isdigit():
-        raise HTTPException(status_code=400, detail="date deve ser YYYY-MM-DD ou YYYYMMDD")
-    return listar_pix_backup(cleaned)
+    return listar_pix_backup(_pix_backup_date(date))
 
 
 @app.post("/pix/webhook", response_model=PixWebhookResponse)

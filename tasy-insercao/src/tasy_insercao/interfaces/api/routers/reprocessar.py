@@ -6,6 +6,8 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from tasy_insercao.application.use_cases.reprocessar import (
+    consultar_pix_backup,
+    espelhar_pix_backup,
     extrair_cartao_dia,
     importar_pix_csv,
     reprocessar_dia,
@@ -109,6 +111,30 @@ async def api_importar_pix_csv(
             trigger_cartao=trigger_cartao,
             user=user,
         )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/pix-backup")
+async def api_pix_backup(date: str, _user: CurrentUser):
+    """CSV PIX gravado na VM (webhook/import) para o dia."""
+    data_ref = _parse_ref_date(date)
+    try:
+        return await consultar_pix_backup(data_ref)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/pix-espelhar")
+async def api_espelhar_pix_backup(date: str, user: CurrentUser):
+    """Carrega a relação do CSV da VM na tela Movimentos Stone. Não integra no Tasy."""
+    data_ref = _parse_ref_date(date)
+    try:
+        return await espelhar_pix_backup(data_ref, user=user)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
