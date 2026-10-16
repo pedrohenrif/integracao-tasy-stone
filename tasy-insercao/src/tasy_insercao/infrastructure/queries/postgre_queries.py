@@ -14,6 +14,25 @@ WHERE
     AND ms.ie_status = 'A'
 """
 
+SELECT_MAQUININHA_ALOCACAO_NO_DIA = """
+SELECT
+    a.cd_caixa,
+    COALESCE(a.cd_transacao_financeira, ms.cd_transacao_financeira),
+    COALESCE(c.ie_somente_movto, 'N')
+FROM
+    maquininha_alocacao a
+    JOIN maquininha_stone ms
+        ON UPPER(ms.nr_serie_maquininha) = UPPER(a.nr_serie_maquininha)
+    JOIN caixas_tasy c ON c.cd_caixa = a.cd_caixa
+WHERE
+    UPPER(a.nr_serie_maquininha) = UPPER(%(nr_serie_maquininha)s)
+    AND a.dt_inicio <= %(dt)s
+    AND (a.dt_fim IS NULL OR a.dt_fim >= %(dt)s)
+ORDER BY
+    a.dt_inicio DESC
+LIMIT 1
+"""
+
 # Schema Cotolengo: cd_tipo_transacao + cd_bandeira (nullable no PIX)
 SELECT_CARTAO_BANDEIRA = """
 SELECT

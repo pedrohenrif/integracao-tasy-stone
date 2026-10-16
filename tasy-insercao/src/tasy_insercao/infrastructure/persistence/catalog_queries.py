@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import psycopg
@@ -94,6 +95,98 @@ def upsert_maquininha(
         row = cur.fetchone()
         conn.commit()
         return row or {}
+
+
+def listar_alocacoes(nr_serie: str | None = None) -> list[dict[str, Any]]:
+    clauses = ["TRUE"]
+    params: dict[str, Any] = {}
+    if nr_serie and nr_serie.strip():
+        clauses.append("UPPER(a.nr_serie_maquininha) = UPPER(%(serial)s)")
+        params["serial"] = nr_serie.strip()
+    where = " AND ".join(clauses)
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                a.nr_sequencia,
+                a.nr_serie_maquininha,
+                a.cd_caixa,
+                c.ds_caixa,
+                a.cd_transacao_financeira,
+                a.dt_inicio,
+                a.dt_fim,
+                a.ds_observacao
+            FROM maquininha_alocacao a
+            LEFT JOIN caixas_tasy c ON c.cd_caixa = a.cd_caixa
+            WHERE {where}
+            ORDER BY a.nr_serie_maquininha, a.dt_inicio DESC
+            """,
+            params,
+        )
+        return list(cur.fetchall())
+
+
+def _periodos_cruzam(a_ini: date, a_fim: date | None, b_ini: date, b_fim: date | None) -> bool:
+    a_end = a_fim or date(9999, 12, 31)
+    b_end = b_fim or date(9999, 12, 31)
+    return a_ini <= b_end and b_ini <= a_end
+
+
+def criar_alocacao(
+    *,
+    nr_serie_maquininha: str,
+    cd_caixa: int,
+    cd_transacao_financeira: int | None,
+    dt_inicio: date,
+    dt_fim: date | None,
+    ds_observacao: str | None = None,
+) -> dict[str, Any]:
+    serial = nr_serie_maquininha.strip()
+    if dt_fim is not None and dt_fim < dt_inicio:
+        raise ValueError("Data final menor que a inicial")
+    existentes = listar_alocacoes(serial)
+    for row in existentes:
+        if _periodos_cruzam(dt_inicio, dt_fim, row["dt_inicio"], row.get("dt_fim")):
+            raise ValueError(
+                f"Período cruza outro já cadastrado "
+                f"({row['dt_inicio']} a {row.get('dt_fim') or 'aberto'} → caixa {row['cd_caixa']})"
+            )
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO maquininha_alocacao (
+                nr_serie_maquininha, cd_caixa, cd_transacao_financeira,
+                dt_inicio, dt_fim, ds_observacao
+            ) VALUES (
+                %(serial)s, %(caixa)s, %(trans)s, %(ini)s, %(fim)s, %(obs)s
+            )
+            RETURNING
+                nr_sequencia, nr_serie_maquininha, cd_caixa,
+                cd_transacao_financeira, dt_inicio, dt_fim, ds_observacao
+            """,
+            {
+                "serial": serial,
+                "caixa": cd_caixa,
+                "trans": cd_transacao_financeira,
+                "ini": dt_inicio,
+                "fim": dt_fim,
+                "obs": (ds_observacao or "").strip() or None,
+            },
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return row or {}
+
+
+def excluir_alocacao(nr_sequencia: int) -> bool:
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM maquininha_alocacao WHERE nr_sequencia = %(id)s",
+            {"id": int(nr_sequencia)},
+        )
+        n = cur.rowcount
+        conn.commit()
+        return n > 0
 
 
 def atualizar_caixa(*, cd_caixa: int, ie_somente_movto: str) -> dict[str, Any] | None:

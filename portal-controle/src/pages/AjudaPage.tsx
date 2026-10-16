@@ -89,6 +89,7 @@ const BLOCKS: HelpBlock[] = [
       "Inative (status I) para parar de importar, sem lista no .env.",
       "Só movimento: marque no caixa (não na máquina). Usado em Telemarketing, quando há várias TF e não se abre caixa diário. O Tasy recebe o movto; a TF da máquina pode ficar em branco.",
       "O serial também grava em MOVTO_CARTAO_CR.DS_COMPROVANTE nos inserts novos (além da observação).",
+      "Alocação temporária: a máquina fica no caixa permanente (ex. MLO) e, em um período (ex. 17–18/10 Eventos), o movimento daqueles dias vai para o outro caixa. Não troque o cadastro principal só por um evento.",
     ],
   },
   {

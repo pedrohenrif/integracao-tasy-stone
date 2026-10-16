@@ -163,11 +163,16 @@ class IntegrarTransacaoCartao:
 
         try:
             config = None
+            dt_lookup = self._data_saldo(tx.dt_movimentacao)
             if hasattr(self.staging, "find_maquininha_config"):
-                config = self.staging.find_maquininha_config(tx.nr_serie_maquininha)
+                config = self.staging.find_maquininha_config(
+                    tx.nr_serie_maquininha, dt=dt_lookup
+                )
             else:
                 try:
-                    config = self.staging.get_maquininha_config(tx.nr_serie_maquininha)
+                    config = self.staging.get_maquininha_config(
+                        tx.nr_serie_maquininha, dt=dt_lookup
+                    )
                 except ValueError:
                     config = None
 

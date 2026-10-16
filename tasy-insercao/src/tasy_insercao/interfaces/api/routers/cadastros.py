@@ -12,7 +12,10 @@ from tasy_insercao.infrastructure.auth.portal_acao_log import registrar_acao_log
 from tasy_insercao.infrastructure.persistence.catalog_queries import (
     atualizar_caixa,
     atualizar_mapeamento,
+    criar_alocacao,
     criar_mapeamento,
+    excluir_alocacao,
+    listar_alocacoes,
     listar_bandeiras,
     listar_mapeamentos,
     listar_maquininhas,
@@ -49,6 +52,15 @@ class MaquininhaBody(BaseModel):
     ie_status: str = "A"
 
 
+class AlocacaoBody(BaseModel):
+    nr_serie_maquininha: str = Field(min_length=1, max_length=64)
+    cd_caixa: int
+    cd_transacao_financeira: int | None = None
+    dt_inicio: date
+    dt_fim: date | None = None
+    ds_observacao: str | None = None
+
+
 class CaixaBody(BaseModel):
     ie_somente_movto: str = "N"
 
@@ -67,13 +79,23 @@ class BandeiraBody(BaseModel):
 @router.get("/maquininhas")
 async def get_maquininhas(_user: CurrentUser):
     try:
+        items = [_ser(x) for x in listar_maquininhas()]
+        por_serial: dict[str, list] = {}
+        try:
+            for a in listar_alocacoes():
+                ser = str(a.get("nr_serie_maquininha") or "")
+                por_serial.setdefault(ser, []).append(_ser(a))
+        except Exception:
+            por_serial = {}
+        for item in items:
+            item["alocacoes"] = por_serial.get(str(item.get("nr_serie_maquininha") or ""), [])
         return {
-            "items": [_ser(x) for x in listar_maquininhas()],
+            "items": items,
             "seriais_pendentes": seriais_com_erro_cadastro(),
             "caixas": listar_caixas(),
         }
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception as trans_exc:
+        return JSONResponse({"error": str(trans_exc)}, status_code=500)
 
 
 @router.patch("/caixas/{cd_caixa}")
@@ -122,6 +144,62 @@ async def post_maquininha(user: CurrentUser, body: MaquininhaBody):
             depois=_ser(row),
         )
         return _ser(row)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/maquininhas/alocacoes")
+async def post_alocacao(user: CurrentUser, body: AlocacaoBody):
+    try:
+        caixas = {int(c["cd_caixa"]): c for c in listar_caixas()}
+        caixa = caixas.get(int(body.cd_caixa)) or {}
+        somente = str(caixa.get("ie_somente_movto") or "N").upper() == "S"
+        if not somente and body.cd_transacao_financeira is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Informe a transação financeira do caixa do período (Eventos, Receita, etc.).",
+            )
+        row = criar_alocacao(
+            nr_serie_maquininha=body.nr_serie_maquininha,
+            cd_caixa=body.cd_caixa,
+            cd_transacao_financeira=body.cd_transacao_financeira,
+            dt_inicio=body.dt_inicio,
+            dt_fim=body.dt_fim,
+            ds_observacao=body.ds_observacao,
+        )
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="cadastro_alocacao",
+            obs=(
+                f"serial={body.nr_serie_maquininha} | caixa={body.cd_caixa} | "
+                f"{body.dt_inicio} a {body.dt_fim or 'aberto'}"
+            ),
+            depois=_ser(row),
+        )
+        return _ser(row)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/maquininhas/alocacoes/{nr_sequencia}")
+async def delete_alocacao(user: CurrentUser, nr_sequencia: int):
+    try:
+        ok = excluir_alocacao(nr_sequencia)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Alocação não encontrada")
+        registrar_acao_log(
+            user_id=user.get("nr_sequencia"),
+            login=str(user.get("ds_login") or ""),
+            acao="excluir_alocacao",
+            nr_seq_registro=nr_sequencia,
+            obs=f"alocacao={nr_sequencia}",
+        )
+        return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

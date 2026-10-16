@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
+  deleteAlocacaoApi,
   maquininhasApi,
+  saveAlocacaoApi,
   saveCaixaApi,
   saveMaquininhaApi,
   type CaixaOpt,
@@ -30,6 +32,13 @@ export function MaquininhasPage() {
   const [busca, setBusca] = useState("");
   const [filtroCaixa, setFiltroCaixa] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
+  const [aloc, setAloc] = useState({
+    cd_caixa: "",
+    cd_transacao_financeira: "",
+    dt_inicio: "",
+    dt_fim: "",
+    ds_observacao: "",
+  });
 
   async function load() {
     const data = await maquininhasApi();
@@ -275,6 +284,121 @@ export function MaquininhasPage() {
             </button>
           </p>
         )}
+        {editing && (
+          <div className="form-card" style={{ marginTop: "1rem", boxShadow: "none" }}>
+            <h2>Alocação temporária (outro caixa em alguns dias)</h2>
+            <p className="muted small">
+              O cadastro permanente continua neste caixa. Nos dias do período o movimento vai para o
+              caixa abaixo (ex.: Eventos 17–18/10, resto MLO).
+            </p>
+            {(existentePeloSerial?.alocacoes || []).length > 0 && (
+              <ul className="muted small">
+                {(existentePeloSerial?.alocacoes || []).map((a) => (
+                  <li key={a.nr_sequencia}>
+                    {a.dt_inicio} → {a.dt_fim || "aberto"} · caixa {a.cd_caixa} {a.ds_caixa || ""} ·
+                    TF {a.cd_transacao_financeira ?? "—"}{" "}
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={async () => {
+                        if (!window.confirm("Excluir esta alocação?")) return;
+                        try {
+                          await deleteAlocacaoApi(a.nr_sequencia);
+                          setMsg("Alocação removida.");
+                          await load();
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Erro ao excluir");
+                        }
+                      }}
+                    >
+                      excluir
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="form-grid">
+              <label>
+                De
+                <input
+                  type="date"
+                  value={aloc.dt_inicio}
+                  onChange={(e) => setAloc({ ...aloc, dt_inicio: e.target.value })}
+                />
+              </label>
+              <label>
+                Até
+                <input
+                  type="date"
+                  value={aloc.dt_fim}
+                  onChange={(e) => setAloc({ ...aloc, dt_fim: e.target.value })}
+                />
+              </label>
+              <label>
+                Caixa no período
+                <select
+                  value={aloc.cd_caixa}
+                  onChange={(e) => setAloc({ ...aloc, cd_caixa: e.target.value })}
+                >
+                  <option value="">Selecione</option>
+                  {caixas.map((c) => (
+                    <option key={c.cd_caixa} value={c.cd_caixa}>
+                      {c.cd_caixa} — {c.ds_caixa}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                TF do período
+                <input
+                  type="number"
+                  value={aloc.cd_transacao_financeira}
+                  onChange={(e) => setAloc({ ...aloc, cd_transacao_financeira: e.target.value })}
+                  placeholder="Transação financeira desse caixa"
+                />
+              </label>
+            </div>
+            <div className="filters-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={async () => {
+                  if (!aloc.dt_inicio || !aloc.cd_caixa) {
+                    setError("Informe início e caixa do período.");
+                    return;
+                  }
+                  setError("");
+                  try {
+                    await saveAlocacaoApi({
+                      nr_serie_maquininha: form.nr_serie_maquininha,
+                      cd_caixa: Number(aloc.cd_caixa),
+                      cd_transacao_financeira: aloc.cd_transacao_financeira
+                        ? Number(aloc.cd_transacao_financeira)
+                        : null,
+                      dt_inicio: aloc.dt_inicio,
+                      dt_fim: aloc.dt_fim || null,
+                      ds_observacao: aloc.ds_observacao || undefined,
+                    });
+                    setMsg("Alocação gravada. O cadastro permanente não mudou.");
+                    setAloc({
+                      cd_caixa: "",
+                      cd_transacao_financeira: "",
+                      dt_inicio: "",
+                      dt_fim: "",
+                      ds_observacao: "",
+                    });
+                    await load();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Erro ao salvar alocação");
+                  }
+                }}
+              >
+                Adicionar período
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="filters-actions">
           <button type="submit" className="btn">
             {editing ? "Salvar alteração" : "Cadastrar"}
@@ -365,6 +489,16 @@ export function MaquininhasPage() {
                   <td>
                     {m.cd_caixa}
                     <div className="muted small">{m.ds_caixa}</div>
+                    {(m.alocacoes || []).length > 0 && (
+                      <div className="muted small">
+                        {(m.alocacoes || [])
+                          .map(
+                            (a) =>
+                              `${a.dt_inicio}–${a.dt_fim || "…"} → ${a.cd_caixa}`,
+                          )
+                          .join(" · ")}
+                      </div>
+                    )}
                   </td>
                   <td>{m.cd_transacao_financeira ?? "—"}</td>
                   <td>{m.ds_maquininha || "-"}</td>

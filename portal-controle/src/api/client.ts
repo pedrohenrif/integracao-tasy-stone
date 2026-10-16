@@ -125,6 +125,17 @@ export async function filasApi() {
   return request<{ items: FilaInfo[] }>("/api/filas");
 }
 
+export type Alocacao = {
+  nr_sequencia: number;
+  nr_serie_maquininha: string;
+  cd_caixa: number;
+  ds_caixa?: string;
+  cd_transacao_financeira: number | null;
+  dt_inicio: string;
+  dt_fim: string | null;
+  ds_observacao?: string | null;
+};
+
 export type Maquininha = {
   nr_sequencia: number;
   nr_serie_maquininha: string;
@@ -134,6 +145,7 @@ export type Maquininha = {
   ie_status: string;
   cd_transacao_financeira: number | null;
   ie_somente_movto?: string;
+  alocacoes?: Alocacao[];
 };
 
 export type Mapeamento = {
@@ -170,6 +182,26 @@ export async function saveMaquininhaApi(body: {
   return request<Maquininha>("/api/cadastros/maquininhas", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export async function saveAlocacaoApi(body: {
+  nr_serie_maquininha: string;
+  cd_caixa: number;
+  cd_transacao_financeira: number | null;
+  dt_inicio: string;
+  dt_fim: string | null;
+  ds_observacao?: string;
+}) {
+  return request<Alocacao>("/api/cadastros/maquininhas/alocacoes", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteAlocacaoApi(nr_sequencia: number) {
+  return request<{ ok: boolean }>(`/api/cadastros/maquininhas/alocacoes/${nr_sequencia}`, {
+    method: "DELETE",
   });
 }
 

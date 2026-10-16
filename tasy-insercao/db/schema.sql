@@ -94,3 +94,20 @@ CREATE TABLE IF NOT EXISTS movimento_stone (
 
 CREATE INDEX IF NOT EXISTS idx_movimento_stone_ref
     ON movimento_stone (reference_date, origem);
+
+-- Máquina no caixa X só em alguns dias (ex. Eventos 17–18/10, resto MLO).
+CREATE TABLE IF NOT EXISTS maquininha_alocacao (
+    nr_sequencia                SERIAL PRIMARY KEY,
+    nr_serie_maquininha         VARCHAR(64) NOT NULL
+        REFERENCES maquininha_stone (nr_serie_maquininha) ON UPDATE CASCADE ON DELETE CASCADE,
+    cd_caixa                    INTEGER NOT NULL REFERENCES caixas_tasy (cd_caixa),
+    cd_transacao_financeira     INTEGER,
+    dt_inicio                   DATE NOT NULL,
+    dt_fim                      DATE,
+    ds_observacao               VARCHAR(255),
+    dt_registro                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_alocacao_periodo CHECK (dt_fim IS NULL OR dt_fim >= dt_inicio)
+);
+
+CREATE INDEX IF NOT EXISTS idx_maquininha_alocacao_serial
+    ON maquininha_alocacao (nr_serie_maquininha, dt_inicio);

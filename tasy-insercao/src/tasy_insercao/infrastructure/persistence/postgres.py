@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+from datetime import date, datetime
 from typing import Any, Generator
 
 import psycopg
@@ -117,28 +118,38 @@ class StagingPostgresRepository:
     def get_by_id_stone(self, id_stone: str) -> tuple | None:
         return self.db.fetchone(pg.SELECT_REGISTRO_POR_ID_STONE, {"id_stone": id_stone})
 
-    def get_maquininha_config(self, nr_serie: str) -> dict:
-        row = self.db.fetchone(pg.SELECT_MAQUININHA_CONFIG, {"nr_serie_maquininha": nr_serie})
-        if not row:
+    def get_maquininha_config(self, nr_serie: str, dt: date | datetime | None = None) -> dict:
+        cfg = self.find_maquininha_config(nr_serie, dt=dt)
+        if not cfg:
             raise ValueError(f"Maquininha {nr_serie} não cadastrada em maquininha_stone")
-        return {
-            "nr_serie_maquininha": row[0],
-            "cd_caixa": row[1],
-            "cd_transacao_financeira": row[2],
-            "ie_somente_movto": (row[3] if len(row) > 3 else "N") or "N",
-        }
+        return cfg
 
-    def find_maquininha_config(self, nr_serie: str) -> dict | None:
-        """Retorna config ou None (sem raise) — usado no fluxo Sem Tesouraria."""
+    def find_maquininha_config(
+        self, nr_serie: str, dt: date | datetime | None = None
+    ) -> dict | None:
+        """Caixa do cadastro; se dt cair numa alocação temporária, usa esse caixa."""
         row = self.db.fetchone(pg.SELECT_MAQUININHA_CONFIG, {"nr_serie_maquininha": nr_serie})
         if not row:
             return None
-        return {
+        cfg = {
             "nr_serie_maquininha": row[0],
             "cd_caixa": row[1],
             "cd_transacao_financeira": row[2],
             "ie_somente_movto": (row[3] if len(row) > 3 else "N") or "N",
         }
+        dia = dt.date() if isinstance(dt, datetime) else dt
+        if dia is None:
+            return cfg
+        aloc = self.db.fetchone(
+            pg.SELECT_MAQUININHA_ALOCACAO_NO_DIA,
+            {"nr_serie_maquininha": nr_serie, "dt": dia},
+        )
+        if not aloc:
+            return cfg
+        cfg["cd_caixa"] = aloc[0]
+        cfg["cd_transacao_financeira"] = aloc[1]
+        cfg["ie_somente_movto"] = (aloc[2] if len(aloc) > 2 else "N") or "N"
+        return cfg
 
     def get_bandeira_tasy(self, tipo_api: str, bandeira: str) -> int | None:
         """Resolve id Tasy via mapeamento Cotolengo (tipo/bandeira numéricos)."""

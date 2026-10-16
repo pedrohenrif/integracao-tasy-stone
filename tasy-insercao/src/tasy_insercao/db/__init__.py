@@ -77,7 +77,8 @@ def cmd_status() -> None:
                     'caixas_tasy',
                     'maquininha_stone',
                     'mapeamento_transacoes_tasy',
-                    'registro_maquininha'
+                    'registro_maquininha',
+                    'maquininha_alocacao'
                   )
                 ORDER BY 1
                 """
