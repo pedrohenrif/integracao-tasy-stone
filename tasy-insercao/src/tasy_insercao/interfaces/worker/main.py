@@ -87,6 +87,44 @@ async def _schedule_retry_or_dlq(evento: Any, error: str, *, fluxo: str, retryab
     await _retry_publisher.publish_dlq(evento, fluxo=fluxo)
 
 
+def peek_id_stone(body: bytes) -> str | None:
+    """Lê id_stone do JSON cru (mesmo se o envelope Pydantic recusar)."""
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    tx = data.get("transaction")
+    if isinstance(tx, dict):
+        sid = str(tx.get("id_stone") or "").strip()
+        if sid:
+            return sid
+    sid = str(data.get("id_stone") or "").strip()
+    return sid or None
+
+
+def parse_evento(model: type, body: bytes) -> tuple[Any | None, str | None]:
+    try:
+        return model.model_validate(json.loads(body.decode("utf-8"))), None
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+async def _dlq_payload_invalido(body: bytes, *, fluxo: str, error: str) -> None:
+    assert _retry_publisher is not None
+    sid = peek_id_stone(body)
+    logger.error(
+        "Payload inválido | fluxo=%s | id_stone=%s | %s",
+        fluxo,
+        sid or "-",
+        error,
+    )
+    await _retry_publisher.publish_dlq_raw(
+        body, fluxo=fluxo, error=error, id_stone=sid
+    )
+
+
 async def _run_integracao(fluxo: str, execute_fn, transaction) -> Any:
     """Executa use case em thread com timeout (não trava prefetch=1)."""
     timeout = max(30, int(settings.CONSUMER_HANDLER_TIMEOUT_SECONDS or 180))
@@ -104,8 +142,15 @@ async def _run_integracao(fluxo: str, execute_fn, transaction) -> Any:
 
 
 async def handle_cartao(message: AbstractIncomingMessage) -> None:
-    async with message.process(requeue=False):
-        evento = EventoFilaCartao.model_validate(json.loads(message.body.decode("utf-8")))
+    # requeue=True: se retry/DLQ falhar, a mensagem volta. requeue=False descartava
+    # payload inválido sem log de id_stone (furo Telemarketing 22/10, R$ 20).
+    async with message.process(requeue=True):
+        evento, parse_error = parse_evento(EventoFilaCartao, message.body)
+        if evento is None:
+            await _dlq_payload_invalido(
+                message.body, fluxo="cartao", error=parse_error or "parse"
+            )
+            return
         if evento.first_seen_at is None:
             evento.first_seen_at = evento.received_at
 
@@ -187,8 +232,13 @@ async def handle_cartao(message: AbstractIncomingMessage) -> None:
 
 
 async def handle_pix(message: AbstractIncomingMessage) -> None:
-    async with message.process(requeue=False):
-        evento = EventoFilaPix.model_validate(json.loads(message.body.decode("utf-8")))
+    async with message.process(requeue=True):
+        evento, parse_error = parse_evento(EventoFilaPix, message.body)
+        if evento is None:
+            await _dlq_payload_invalido(
+                message.body, fluxo="pix", error=parse_error or "parse"
+            )
+            return
         if evento.first_seen_at is None:
             evento.first_seen_at = evento.received_at
 

@@ -122,6 +122,34 @@ class RetryPublisher:
             evento.last_error,
         )
 
+    async def publish_dlq_raw(
+        self,
+        body: bytes,
+        *,
+        fluxo: str,
+        error: str,
+        id_stone: str | None = None,
+    ) -> None:
+        """Payload que nem parseia: não pode sumir no ack sem rastro."""
+        dlq = settings.RABBITMQ_QUEUE_PIX_DLQ if fluxo == "pix" else settings.RABBITMQ_QUEUE_DLQ
+        sid = (id_stone or "").strip() or "UNKNOWN"
+        await self._publish(
+            dlq,
+            {
+                "event_type": f"{fluxo}.invalid_payload",
+                "id_stone": sid,
+                "last_error": (error or "")[:500],
+                "raw": body.decode("utf-8", errors="replace")[:8000],
+            },
+            {"x-dlq": True, "x-flow": fluxo, "x-invalid-payload": True},
+        )
+        logger.error(
+            "DLQ payload inválido | fluxo=%s | id_stone=%s | error=%s",
+            fluxo,
+            sid,
+            (error or "")[:300],
+        )
+
     async def publish_main(self, evento: Any, *, fluxo: str = "cartao") -> None:
         """Republica na fila principal (reprocessamento manual / portal)."""
         main_q = settings.RABBITMQ_QUEUE_PIX if fluxo == "pix" else settings.RABBITMQ_QUEUE_CARTAO
