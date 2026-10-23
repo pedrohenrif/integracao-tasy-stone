@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -45,3 +46,24 @@ def test_parse_pix_stats_conta_descartes():
     assert {t.id_stone for t in parsed.transactions} == {"ok1", "ok2"}
     reasons = {s["reason"] for s in parsed.stats.skipped_samples}
     assert {"status", "operation", "no_id"} <= reasons
+
+
+CSV_PIX_DEPOIS_21H = """id,status,pix_transaction__detail__operation,amount,pix_transaction__detail__provider_datetime,pix_transaction__terminal__serial_number,created_at
+naive_utc,paid,pay,400,2026-10-21T00:37:00.000,PB09243M78791,
+aware_utc,paid,pay,400,2026-10-21T00:37:00+00:00,PB09243M78791,
+zulu,paid,pay,400,2026-10-21T00:37:00Z,PB09243M78791,
+brt_offset,paid,pay,400,2026-10-20T21:37:00-03:00,PB09243M78791,
+created_utc,paid,pay,400,,PB09243M78791,2026-10-21T00:37:00.000000+00:00
+"""
+
+
+def test_pix_depois_das_21h_fica_no_dia_brt():
+    """21:37 BRT = 00:37 UTC D+1 — o caixa tem que permanecer no dia da venda."""
+    parsed = parse_pix_csv_with_stats(CSV_PIX_DEPOIS_21H)
+    assert parsed.stats.accepted == 5
+    for tx in parsed.transactions:
+        assert tx.reference_date == "2026-10-20", tx.id_stone
+        assert tx.dt_movimentacao.date() == date(2026, 10, 20), tx.id_stone
+        assert tx.dt_movimentacao.hour == 21, tx.id_stone
+        assert tx.dt_movimentacao.minute == 37, tx.id_stone
+    assert {r["reference_date"] for r in parsed.portal_rows} == {"2026-10-20"}

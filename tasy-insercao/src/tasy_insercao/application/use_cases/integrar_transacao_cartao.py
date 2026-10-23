@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from workalendar.america import Brazil
 
@@ -607,6 +608,8 @@ class IntegrarTransacaoCartao:
 
     def _data_saldo(self, dt_movimentacao: datetime | date) -> date:
         if isinstance(dt_movimentacao, datetime):
+            if dt_movimentacao.tzinfo is not None:
+                return dt_movimentacao.astimezone(ZoneInfo("America/Sao_Paulo")).date()
             return dt_movimentacao.date()
         return dt_movimentacao
 

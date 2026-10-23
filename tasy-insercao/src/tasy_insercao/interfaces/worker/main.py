@@ -9,7 +9,10 @@ from typing import Any
 from aio_pika.abc import AbstractIncomingMessage
 
 from tasy_insercao.application.use_cases.integrar_transacao_cartao import IntegrarTransacaoCartao
-from tasy_insercao.application.use_cases.integrar_transacao_pix import IntegrarTransacaoPix
+from tasy_insercao.application.use_cases.integrar_transacao_pix import (
+    IntegrarTransacaoPix,
+    datetime_pix_para_caixa,
+)
 from tasy_insercao.domain.integracao.models import (
     EventoFilaCartao,
     EventoFilaPix,
@@ -209,12 +212,8 @@ async def handle_pix(message: AbstractIncomingMessage) -> None:
         if resultado.status == StatusIntegracao.INTEGRADO:
             logger.info("Inserido | pix | id_stone=%s | %s", resultado.id_stone, resultado.mensagem)
             if resultado.nr_seq_caixa_receb:
-                dt_saldo = evento.transaction.dt_movimentacao
-                dt_str = (
-                    dt_saldo.date().isoformat()
-                    if hasattr(dt_saldo, "date")
-                    else str(dt_saldo)[:10]
-                )
+                dt_saldo = datetime_pix_para_caixa(evento.transaction.dt_movimentacao)
+                dt_str = dt_saldo.date().isoformat()
                 cartao_uc, _ = _build_services()
                 confirmar = getattr(cartao_uc.tasy, "confirmar_caixa_receb_stone", None)
                 if confirmar is not None:

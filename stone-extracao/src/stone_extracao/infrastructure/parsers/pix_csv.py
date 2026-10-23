@@ -4,11 +4,14 @@ import csv
 import io
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from stone_extracao.domain.pix.models import TransacaoPix
+
+_TZ_BRT = ZoneInfo("America/Sao_Paulo")
 
 _ISO_FORMATS = (
     "%Y-%m-%dT%H:%M:%S.%f%z",
@@ -18,6 +21,17 @@ _ISO_FORMATS = (
 )
 
 
+def _to_brt(dt: datetime) -> datetime:
+    """Stone PIX: created_at vem +00:00; provider_datetime costuma vir naive em UTC.
+
+    Sem esta conversão, PIX depois das 21h BRT (00h UTC do dia seguinte)
+    cai no caixa do outro dia.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_TZ_BRT)
+
+
 def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -25,15 +39,19 @@ def _parse_dt(value: str | None) -> datetime | None:
     # normaliza +00:00 → +0000 para strptime %z em alguns casos
     if re.search(r"[+-]\d{2}:\d{2}$", raw):
         raw = raw[:-3] + raw[-2:]
+    parsed: datetime | None = None
     for fmt in _ISO_FORMATS:
         try:
-            return datetime.strptime(raw, fmt)
+            parsed = datetime.strptime(raw, fmt)
+            break
         except ValueError:
             continue
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return _to_brt(parsed)
 
 
 def _centavos_para_reais(value: str | None) -> Decimal | None:

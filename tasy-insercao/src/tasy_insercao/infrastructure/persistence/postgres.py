@@ -4,6 +4,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Generator
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import tuple_row
@@ -210,7 +211,14 @@ class StagingPostgresRepository:
             except Exception:
                 cd_caixa = 0
 
-        dt = tx.dt_movimentacao.date() if hasattr(tx.dt_movimentacao, "date") else tx.dt_movimentacao
+        dt_mov = tx.dt_movimentacao
+        if isinstance(dt_mov, datetime):
+            if dt_mov.tzinfo is not None:
+                dt = dt_mov.astimezone(ZoneInfo("America/Sao_Paulo")).date()
+            else:
+                dt = dt_mov.date()
+        else:
+            dt = dt_mov
         params = {
             "nr_serie_maquininha": tx.nr_serie_maquininha,
             "cd_caixa": cd_caixa,
