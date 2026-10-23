@@ -184,7 +184,7 @@ export function MovimentosStonePage() {
           <strong>Nenhum movimento neste filtro</strong>
           <p className="muted">
             {pixBackup?.has_csv
-              ? "O arquivo está na VM. Clique em Carregar relação do CSV — não integra de novo no Tasy."
+              ? "PIX: use Carregar relação do CSV (não reintegra no Tasy). Cartão não entra nesse botão — extraia o dia no Dashboard."
               : "Ainda não há CSV PIX deste dia na VM (webhook ~04:50 do dia seguinte). Cartão aparece após extrair no Dashboard."}
           </p>
         </div>

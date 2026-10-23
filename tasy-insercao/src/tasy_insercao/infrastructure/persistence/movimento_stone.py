@@ -43,6 +43,58 @@ def _as_dt(value: Any) -> datetime | None:
         return None
 
 
+def _clip(value: Any, n: int) -> str | None:
+    """None/vazio não pode ir para slice (`None[:240]` quebra a tela Movimentos)."""
+    text = str(value or "").strip()
+    return text[:n] if text else None
+
+
+def _as_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(value).strip()
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        pass
+    if len(raw) >= 8 and raw[:8].isdigit():
+        try:
+            return datetime.strptime(raw[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def item_params(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Monta o bind do upsert. Publicado sem motivo (caso normal) não pode estourar."""
+    id_stone = str(raw.get("id_stone") or "").strip()
+    origem = str(raw.get("origem") or "").strip().lower()[:10]
+    if not id_stone or origem not in ("pix", "cartao"):
+        return None
+    dt_mov = _as_dt(raw.get("dt_movimentacao"))
+    ref_date = _as_date(raw.get("reference_date"))
+    if ref_date is None and dt_mov is not None:
+        ref_date = dt_mov.date()
+    publicado = "S" if str(raw.get("publicado") or "").upper()[:1] in ("S", "1", "T") else "N"
+    return {
+        "origem": origem,
+        "id_stone": id_stone[:80],
+        "serial": _clip(raw.get("nr_serie_maquininha"), 64),
+        "vl": _as_decimal(raw.get("vl_transacao")),
+        "dt": dt_mov,
+        "ref": ref_date,
+        "status": _clip(raw.get("status_origem"), 40),
+        "operation": _clip(raw.get("operation"), 40),
+        "publicado": publicado,
+        "motivo": _clip(raw.get("ds_motivo"), 240),
+        "source": _clip(raw.get("source"), 40),
+    }
+
+
 def upsert_movimentos(items: list[dict[str, Any]]) -> int:
     if not items:
         return 0
@@ -69,39 +121,10 @@ def upsert_movimentos(items: list[dict[str, Any]]) -> int:
     count = 0
     with _connect() as conn, conn.cursor() as cur:
         for raw in items:
-            id_stone = str(raw.get("id_stone") or "").strip()
-            origem = str(raw.get("origem") or "").strip().lower()[:10]
-            if not id_stone or origem not in ("pix", "cartao"):
+            params = item_params(raw)
+            if params is None:
                 continue
-            ref = raw.get("reference_date")
-            ref_date = None
-            if isinstance(ref, date) and not isinstance(ref, datetime):
-                ref_date = ref
-            elif ref:
-                try:
-                    ref_date = date.fromisoformat(str(ref)[:10])
-                except ValueError:
-                    ref_date = None
-            dt_mov = _as_dt(raw.get("dt_movimentacao"))
-            if ref_date is None and dt_mov is not None:
-                ref_date = dt_mov.date()
-            publicado = "S" if str(raw.get("publicado") or "").upper()[:1] in ("S", "1", "T") else "N"
-            cur.execute(
-                sql,
-                {
-                    "origem": origem,
-                    "id_stone": id_stone[:80],
-                    "serial": (str(raw.get("nr_serie_maquininha") or "").strip() or None),
-                    "vl": _as_decimal(raw.get("vl_transacao")),
-                    "dt": dt_mov,
-                    "ref": ref_date,
-                    "status": (str(raw.get("status_origem") or "").strip() or None),
-                    "operation": (str(raw.get("operation") or "").strip() or None),
-                    "publicado": publicado,
-                    "motivo": (str(raw.get("ds_motivo") or "").strip() or None)[:240],
-                    "source": (str(raw.get("source") or "").strip() or None)[:40],
-                },
-            )
+            cur.execute(sql, params)
             count += 1
         conn.commit()
     return count
