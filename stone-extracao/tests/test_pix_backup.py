@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from stone_extracao.infrastructure.store.pix_backup import (
+    latest_pix_csv_path,
     linhas_pix_backup,
     listar_pix_backup,
     save_pix_conferencia,
@@ -59,6 +60,16 @@ def test_linhas_pix_backup_marca_publicados(tmp_path, monkeypatch):
     assert by_id["ok1"]["publicado"] == "S"
     assert by_id["ok2"]["publicado"] == "N"
     assert by_id["ok2"]["ds_motivo"] == "fora_piloto"
+
+
+def test_latest_pix_csv_path_so_depois_de_gravar(tmp_path, monkeypatch):
+    _enable_backup(tmp_path, monkeypatch)
+    assert latest_pix_csv_path("2026-10-26") is None
+    save_pix_csv_backup(b"id,status\n1,paid\n", reference_date="2026-10-26", source="webhook")
+    path = latest_pix_csv_path("2026-10-26")
+    assert path is not None
+    assert path.name == "stone_pix_20261026_latest.csv"
+    assert path.read_bytes().startswith(b"id,status")
 
 
 def test_backup_desligado_nao_grava(tmp_path, monkeypatch):

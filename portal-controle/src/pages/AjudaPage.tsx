@@ -141,7 +141,7 @@ const BLOCKS: HelpBlock[] = [
     body: [
       "Liga/desliga a rotina automática D-1 de cartão e de PIX.",
       "Cartão: 1º horário é fallback (só se o webhook PIX ainda não disparou). 2º (RETRY) republica o D-1 mesmo depois do lote — pega 1–2 msgs que sumiram na fila.",
-      "PIX: solicita o extrato de ontem; a Stone envia o arquivo no webhook público.",
+      "PIX: 1º horário solicita o extrato na Stone. 2º (RETRY) republica o CSV da pasta de backup na VM (a Stone não reenvia o webhook). Sem arquivo na pasta, solicita de novo.",
       "Horários vêm do .env na VM (CARTAO_CRON_* e PIX_CRON_*).",
       "A tela mostra a última execução (OK/ERRO). Falhas também entram na Auditoria (login sistema), se PORTAL_INTERNAL_TOKEN estiver nos dois .env.",
     ],

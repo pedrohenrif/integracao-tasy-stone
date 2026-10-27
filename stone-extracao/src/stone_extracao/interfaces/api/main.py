@@ -38,6 +38,7 @@ from stone_extracao.infrastructure.scheduling.cartao_diario import (
     status_cron,
 )
 from stone_extracao.infrastructure.scheduling.pix_diario import (
+    JOB_ID_RETRY as PIX_JOB_ID_RETRY,
     adicionar_job_pix,
     aplicar_estado_inicial_pix,
     set_cron_pix_enabled,
@@ -49,7 +50,11 @@ from stone_extracao.infrastructure.stone.conciliation_client import (
 )
 from stone_extracao.infrastructure.stone.pix_client import PixFetchError, StonePixClient
 from stone_extracao.infrastructure.store.filtro_seriais import resolve_terminals
-from stone_extracao.infrastructure.store.pix_backup import linhas_pix_backup, listar_pix_backup
+from stone_extracao.infrastructure.store.pix_backup import (
+    latest_pix_csv_path,
+    linhas_pix_backup,
+    listar_pix_backup,
+)
 from stone_extracao.infrastructure.store.pix_webhook_inbox import listar_hits, registrar_hit
 from stone_extracao.infrastructure.store.ultima_extracao import salvar_extracao
 from stone_extracao.interfaces.api.painel import router as painel_router
@@ -124,6 +129,73 @@ async def executar_solicitacao_pix(
             result.reference_date,
         )
     return result
+
+
+async def executar_pix_do_backup(
+    publisher: RabbitPublisher,
+    reference_date: str,
+) -> SolicitarPixResultado:
+    """
+    RETRY PIX: republica o CSV já gravado em xml_backup/pix/.../stone_pix_*_latest.csv.
+    A Stone não reenvia o webhook de forma confiável; a pasta é a fonte.
+    """
+    path = latest_pix_csv_path(reference_date)
+    if path is None:
+        logger.warning(
+            "PIX backup retry | sem CSV na pasta | date=%s — webhook Stone não gravou o dia",
+            reference_date,
+        )
+        return SolicitarPixResultado(
+            reference_date=reference_date,
+            status="skipped_no_backup",
+            source="csv_backup",
+            message=(
+                "Sem stone_pix_*_latest.csv no backup. "
+                "O retry só republica se o webhook (ou um CSV manual) já salvou o arquivo."
+            ),
+            published_from_body=0,
+        )
+
+    raw = path.read_bytes()
+    if not raw.strip():
+        logger.warning("PIX backup retry | CSV vazio | date=%s | path=%s", reference_date, path)
+        return SolicitarPixResultado(
+            reference_date=reference_date,
+            status="skipped_empty_backup",
+            source="csv_backup",
+            message=f"CSV vazio em {path.name}",
+            published_from_body=0,
+        )
+
+    logger.info(
+        "PIX backup retry | republicando | date=%s | bytes=%s | path=%s",
+        reference_date,
+        len(raw),
+        path,
+    )
+    use_case = ReceberWebhookPix(parser=PixCsvParser(), publisher=publisher)
+    result = await use_case.execute(
+        raw,
+        source="csv_backup",
+        terminals=await resolve_terminals(),
+        reference_date=reference_date,
+    )
+    await _apos_webhook_pix_ok(
+        publisher,
+        reference_date=result.reference_date or reference_date,
+        pix_published=result.published_count,
+        event_type=result.event_type,
+    )
+    return SolicitarPixResultado(
+        reference_date=result.reference_date or reference_date,
+        status=result.status or "ok",
+        source="csv_backup",
+        message=(
+            f"Republicado do backup {path.name} | parsed={result.parsed_count} | "
+            f"published={result.published_count}"
+        ),
+        published_from_body=int(result.published_count or 0),
+    )
 
 
 async def _disparar_cartao_apos_pix(
@@ -302,7 +374,19 @@ async def lifespan(app: FastAPI):
             origem="cron_retry" if retry else "cron_fallback",
         )
 
-    async def _cron_pix(reference_date: str) -> SolicitarPixResultado:
+    async def _cron_pix(
+        reference_date: str, slot: str = "pix_conciliacao_d1"
+    ) -> SolicitarPixResultado:
+        # Principal: solicita extrato na Stone (entrega via webhook).
+        # Retry: republica o CSV da pasta de backup — a Stone não reenvia o arquivo.
+        if slot == PIX_JOB_ID_RETRY:
+            from_backup = await executar_pix_do_backup(app.state.publisher, reference_date)
+            if from_backup.status != "skipped_no_backup":
+                return from_backup
+            logger.info(
+                "PIX cron retry | pasta vazia, solicita Stone de novo | date=%s",
+                reference_date,
+            )
         return await executar_solicitacao_pix(app.state.publisher, reference_date)
 
     scheduler = criar_scheduler_cartao(_cron_cartao)
@@ -750,6 +834,29 @@ def _pix_backup_date(date: str) -> str:
 async def pix_backup_linhas(date: str):
     """Linhas do CSV PIX da VM para espelhar no portal (não publica na fila)."""
     return linhas_pix_backup(_pix_backup_date(date))
+
+
+@app.post("/pix/conciliation/from-backup", response_model=PixWebhookResponse)
+async def pix_from_backup(
+    request: Request,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Dia YYYY-MM-DD"),
+):
+    """Republica o PIX do latest.csv gravado na VM (mesmo caminho do cron RETRY)."""
+    publisher = _publisher(request)
+    asked = await executar_pix_do_backup(publisher, date)
+    if asked.status.startswith("skipped_"):
+        raise HTTPException(status_code=404, detail=asked.message)
+    return PixWebhookResponse(
+        source=asked.source,
+        parsed_count=asked.published_from_body,
+        published_count=asked.published_from_body,
+        queue=settings.RABBITMQ_QUEUE_PIX,
+        sample_ids=[],
+        event_type="pix",
+        status=asked.status,
+        reference_date=asked.reference_date,
+        alerta=asked.message,
+    )
 
 
 @app.get("/pix/backup/{date}")

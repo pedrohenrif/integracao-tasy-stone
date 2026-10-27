@@ -24,8 +24,8 @@ JOB_ID_RETRY = "pix_conciliacao_d1_retry"
 JOB_IDS = (JOB_ID, JOB_ID_RETRY)
 MISFIRE_GRACE_SECONDS = 2 * 60 * 60
 
-# Callable async que recebe reference_date YYYY-MM-DD
-PixRunner = Callable[[str], Awaitable[object]]
+# Callable async: reference_date YYYY-MM-DD e slot do job (principal vs retry).
+PixRunner = Callable[..., Awaitable[object]]
 
 
 def _on_scheduler_event_pix(event) -> None:
@@ -72,7 +72,7 @@ def adicionar_job_pix(scheduler: AsyncIOScheduler, runner: PixRunner) -> None:
             settings.STONE_PIX_MERCHANT_ID,
         )
         try:
-            result = await runner(reference_date)
+            result = await runner(reference_date, slot=slot)
             status = str(getattr(result, "status", "?") or "?")
             msg = str(getattr(result, "message", "") or "")
             published_raw = getattr(result, "published_from_body", 0)
@@ -212,7 +212,7 @@ def status_cron_pix(scheduler: AsyncIOScheduler | None) -> dict[str, Any]:
         "next_date_preview": data_ontem_iso(settings.CARTAO_CRON_TZ),
         "schedule": schedule,
         "slots": slots,
-        "flow": "request+webhook",
+        "flow": "request+webhook; retry=csv_backup",
         "last_run_at": estado.get("last_run_at"),
         "last_ok": estado.get("last_ok"),
         "last_ok_at": estado.get("last_ok_at"),

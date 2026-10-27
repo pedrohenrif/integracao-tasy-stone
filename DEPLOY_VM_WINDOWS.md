@@ -174,7 +174,7 @@ Proxy público (se usado):
 
 | Fluxo | Horário (.env) | Painel | O que faz |
 |-------|----------------|--------|-----------|
-| PIX | `PIX_CRON_*` (~04:05) | Scheduler → PIX | Solicita extrato D-1 → webhook (mesmo vazio) |
+| PIX | `PIX_CRON_*` (~04:05) + RETRY (~05:05) | Scheduler → PIX | 1º solicita extrato (webhook). **RETRY republica o CSV da pasta** `xml_backup/pix`. |
 | Cartão | `CARTAO_CRON_*` (~05:30) + RETRY (~06:30) | Scheduler → Cartão | 1º = fallback se o webhook PIX não disparou cartão. **RETRY republica o D-1** (msgs perdidas na fila). |
 
 Com `LOTE_AGUARDA_PIX_WEBHOOK=true` (padrão): ordem do lote = solicitar PIX → webhook → publicar PIX + disparar cartão → consumer unifica recebimento → FECHAR após quiet period.  

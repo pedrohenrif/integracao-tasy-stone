@@ -178,7 +178,7 @@ export function SchedulerPage() {
 
       <CronCard
         title="PIX — solicitação diária (D-1)"
-        hint="Quando ativo, solicita o extrato PIX de ontem; a Stone envia o CSV no webhook. Horários: PIX_CRON_* e PIX_CRON_RETRY_* (padrão 04:05 e 05:05). Exige STONE_PIX_MERCHANT_ID = CNPJ (14 dígitos)."
+        hint="1º horário: solicita o extrato na Stone (entrega no webhook). 2º (RETRY): republica o CSV já gravado em xml_backup/pix — a Stone não reenvia o arquivo. Sem latest.csv na pasta, solicita de novo. Horários: PIX_CRON_* e PIX_CRON_RETRY_* (ex. 04:05 e 05:05)."
         status={pix}
         busy={busy}
         onToggle={(v) => void togglePix(v)}
