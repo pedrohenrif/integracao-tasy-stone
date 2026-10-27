@@ -170,7 +170,7 @@ export function SchedulerPage() {
 
       <CronCard
         title="Cartão — conciliação diária (D-1)"
-        hint="Quando ativo, busca o extrato de ontem (D-1) na Stone e publica na fila. Horários no .env: CARTAO_CRON_* e CARTAO_CRON_RETRY_* (padrão 04:00 e 05:00). A Stone só libera cartão após 04:00 BRT."
+        hint="1º horário: fallback se o webhook PIX ainda não disparou o cartão. 2º (RETRY): republica o D-1 mesmo depois do lote — pega 1–2 msgs que sumiram na fila. Horários: CARTAO_CRON_* e CARTAO_CRON_RETRY_* (ex. 05:30 e 06:30). Stone só libera cartão após 04:00 BRT."
         status={cartao}
         busy={busy}
         onToggle={(v) => void toggleCartao(v)}

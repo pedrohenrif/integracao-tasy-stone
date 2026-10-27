@@ -31,6 +31,7 @@ from stone_extracao.infrastructure.messaging.rabbit import (
 from stone_extracao.infrastructure.parsers.cartao_parser import CartaoXmlParser
 from stone_extracao.infrastructure.parsers.pix_parser import PixCsvParser
 from stone_extracao.infrastructure.scheduling.cartao_diario import (
+    JOB_ID_RETRY,
     aplicar_estado_inicial,
     criar_scheduler_cartao,
     set_cron_enabled,
@@ -290,13 +291,15 @@ async def lifespan(app: FastAPI):
     app.state.rabbit_channel = channel
     app.state.publisher = RabbitPublisher(channel)
 
-    async def _cron_cartao(reference_date: str) -> ExtracaoResultado:
-        # Com LOTE_AGUARDA_PIX_WEBHOOK: fallback se o webhook não disparou cartão
+    async def _cron_cartao(reference_date: str, slot: str = "cartao_conciliacao_d1") -> ExtracaoResultado:
+        # Principal: fallback se o webhook PIX ainda não disparou cartão.
+        # Retry: republica o D-1 (force) — pega mensagem que sumiu na primeira fila.
+        retry = slot == JOB_ID_RETRY
         return await executar_extracao_cartao_com_gate(
             app.state.publisher,
             reference_date,
-            force=False,
-            origem="cron_fallback",
+            force=retry,
+            origem="cron_retry" if retry else "cron_fallback",
         )
 
     async def _cron_pix(reference_date: str) -> SolicitarPixResultado:

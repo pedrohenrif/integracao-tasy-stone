@@ -32,8 +32,8 @@ JOB_ID_FECHAR_PREFIX = "fechar_receb_d1_"
 # Se o processo estiver ocupado/reiniciando no minuto exato, ainda executa (padrão APScheduler = 1s).
 MISFIRE_GRACE_SECONDS = 2 * 60 * 60
 
-# Callable async que recebe reference_date YYYYMMDD
-ExtracaoRunner = Callable[[str], Awaitable[object]]
+# Callable async: reference_date YYYYMMDD e slot do job (principal vs retry).
+ExtracaoRunner = Callable[..., Awaitable[object]]
 
 
 def _on_scheduler_event(event) -> None:
@@ -145,7 +145,7 @@ def criar_scheduler_cartao(runner: ExtracaoRunner) -> AsyncIOScheduler:
             settings.CARTAO_CRON_TZ,
         )
         try:
-            result = await runner(reference_date)
+            result = await runner(reference_date, slot=slot)
             published_raw = getattr(result, "published_count", None)
             published = int(published_raw) if published_raw is not None else None
             logger.info(

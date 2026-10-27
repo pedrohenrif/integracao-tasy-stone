@@ -10,6 +10,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from tasy_insercao.infrastructure.config.settings import settings
+from tasy_insercao.infrastructure.persistence.debug_queries import parse_csv_ints, parse_csv_tokens
 
 
 def _connect() -> psycopg.Connection:
@@ -130,7 +131,7 @@ def upsert_movimentos(items: list[dict[str, Any]]) -> int:
     return count
 
 
-def listar_movimentos(
+def where_movimentos(
     *,
     data_de: date | None = None,
     data_ate: date | None = None,
@@ -138,11 +139,18 @@ def listar_movimentos(
     nr_serie: str | None = None,
     publicado: str | None = None,
     id_stone: str | None = None,
-    limit: int = 200,
-    offset: int = 0,
-) -> dict[str, Any]:
+    vl_min: Decimal | None = None,
+    vl_max: Decimal | None = None,
+    casou: str | None = None,
+    cd_caixa: int | str | None = None,
+    tipo: str | None = None,
+    bandeira: str | None = None,
+    cd_status: int | str | None = None,
+    obs: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """WHERE do espelho + join staging. casou=N = no arquivo e sem Integrações."""
     clauses = ["TRUE"]
-    params: dict[str, Any] = {"limit": min(max(limit, 1), 2000), "offset": max(offset, 0)}
+    params: dict[str, Any] = {}
     if data_de:
         clauses.append("m.reference_date >= %(data_de)s")
         params["data_de"] = data_de
@@ -161,7 +169,121 @@ def listar_movimentos(
     if id_stone:
         clauses.append("m.id_stone ILIKE %(id_stone)s")
         params["id_stone"] = f"%{id_stone.strip()}%"
-    where = " AND ".join(clauses)
+    if vl_min is not None:
+        clauses.append("m.vl_transacao >= %(vl_min)s")
+        params["vl_min"] = vl_min
+    if vl_max is not None:
+        clauses.append("m.vl_transacao <= %(vl_max)s")
+        params["vl_max"] = vl_max
+    flag = (casou or "").strip().upper()[:1]
+    if flag == "S":
+        clauses.append("r.nr_sequencia IS NOT NULL")
+    elif flag == "N":
+        clauses.append("r.nr_sequencia IS NULL")
+    caixas = parse_csv_ints(cd_caixa)
+    if len(caixas) == 1:
+        clauses.append("COALESCE(r.cd_caixa, mq.cd_caixa) = %(cd_caixa)s")
+        params["cd_caixa"] = caixas[0]
+    elif len(caixas) > 1:
+        clauses.append("COALESCE(r.cd_caixa, mq.cd_caixa) = ANY(%(cd_caixas)s)")
+        params["cd_caixas"] = caixas
+    tipos = parse_csv_tokens(tipo)
+    if tipos:
+        tipo_parts: list[str] = []
+        outros = [t for t in tipos if t != "pix"]
+        if outros:
+            tipo_parts.append(
+                "LOWER(COALESCE(r.cd_tipo_transacao, m.operation, '')) = ANY(%(tipos)s)"
+            )
+            params["tipos"] = outros
+        if "pix" in tipos:
+            tipo_parts.append(
+                "(m.origem = 'pix' OR LOWER(COALESCE(r.cd_tipo_transacao, '')) = 'pix')"
+            )
+        if tipo_parts:
+            clauses.append("(" + " OR ".join(tipo_parts) + ")")
+    bandeiras = parse_csv_tokens(bandeira)
+    if bandeiras:
+        band_parts: list[str] = []
+        if "elo" in bandeiras:
+            band_parts.append("LOWER(COALESCE(r.cd_bandeira, '')) IN ('elo', 'ticket')")
+        outras = [b for b in bandeiras if b != "elo"]
+        if outras:
+            band_parts.append(
+                "("
+                + " OR ".join(
+                    f"LOWER(COALESCE(r.cd_bandeira, '')) LIKE %(bandeira_{i})s"
+                    for i, _ in enumerate(outras)
+                )
+                + ")"
+            )
+            for i, band in enumerate(outras):
+                params[f"bandeira_{i}"] = f"%{band}%"
+        if band_parts:
+            clauses.append("(" + " OR ".join(band_parts) + ")")
+    status_ids = parse_csv_ints(cd_status)
+    if len(status_ids) == 1:
+        clauses.append("r.cd_status = %(cd_status)s")
+        params["cd_status"] = status_ids[0]
+    elif len(status_ids) > 1:
+        clauses.append("r.cd_status = ANY(%(cd_statuses)s)")
+        params["cd_statuses"] = status_ids
+    if obs:
+        clauses.append(
+            "(COALESCE(m.ds_motivo, '') ILIKE %(obs)s "
+            "OR COALESCE(r.ds_obs_processo, '') ILIKE %(obs)s)"
+        )
+        params["obs"] = f"%{obs.strip()}%"
+    return " AND ".join(clauses), params
+
+
+_FROM_JOIN = """
+            FROM movimento_stone m
+            LEFT JOIN registro_maquininha r ON r.id_stone = m.id_stone
+            LEFT JOIN maquininha_stone mq
+                ON UPPER(mq.nr_serie_maquininha) = UPPER(TRIM(m.nr_serie_maquininha))
+            LEFT JOIN caixas_tasy c
+                ON c.cd_caixa = COALESCE(r.cd_caixa, mq.cd_caixa)
+"""
+
+
+def listar_movimentos(
+    *,
+    data_de: date | None = None,
+    data_ate: date | None = None,
+    origem: str | None = None,
+    nr_serie: str | None = None,
+    publicado: str | None = None,
+    id_stone: str | None = None,
+    vl_min: Decimal | None = None,
+    vl_max: Decimal | None = None,
+    casou: str | None = None,
+    cd_caixa: int | str | None = None,
+    tipo: str | None = None,
+    bandeira: str | None = None,
+    cd_status: int | str | None = None,
+    obs: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict[str, Any]:
+    where, params = where_movimentos(
+        data_de=data_de,
+        data_ate=data_ate,
+        origem=origem,
+        nr_serie=nr_serie,
+        publicado=publicado,
+        id_stone=id_stone,
+        vl_min=vl_min,
+        vl_max=vl_max,
+        casou=casou,
+        cd_caixa=cd_caixa,
+        tipo=tipo,
+        bandeira=bandeira,
+        cd_status=cd_status,
+        obs=obs,
+    )
+    params["limit"] = min(max(limit, 1), 2000)
+    params["offset"] = max(offset, 0)
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -169,8 +291,14 @@ def listar_movimentos(
                 COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE m.publicado = 'S') AS publicados,
                 COUNT(*) FILTER (WHERE m.publicado = 'N') AS nao_publicados,
-                COALESCE(SUM(m.vl_transacao), 0) AS soma_valor
-            FROM movimento_stone m
+                COUNT(*) FILTER (WHERE r.nr_sequencia IS NOT NULL) AS casaram,
+                COUNT(*) FILTER (WHERE r.nr_sequencia IS NULL) AS nao_casaram,
+                COALESCE(SUM(m.vl_transacao), 0) AS soma_valor,
+                COALESCE(SUM(m.vl_transacao) FILTER (WHERE r.nr_sequencia IS NOT NULL), 0)
+                    AS soma_casaram,
+                COALESCE(SUM(m.vl_transacao) FILTER (WHERE r.nr_sequencia IS NULL), 0)
+                    AS soma_nao_casaram
+            {_FROM_JOIN}
             WHERE {where}
             """,
             params,
@@ -181,8 +309,14 @@ def listar_movimentos(
             SELECT
                 m.nr_sequencia, m.origem, m.id_stone, m.nr_serie_maquininha,
                 m.vl_transacao, m.dt_movimentacao, m.reference_date,
-                m.status_origem, m.operation, m.publicado, m.ds_motivo, m.source
-            FROM movimento_stone m
+                m.status_origem, m.operation, m.publicado, m.ds_motivo, m.source,
+                r.nr_sequencia AS nr_seq_registro,
+                r.cd_status,
+                COALESCE(r.cd_caixa, mq.cd_caixa) AS cd_caixa,
+                c.ds_caixa,
+                COALESCE(r.cd_tipo_transacao, m.operation) AS cd_tipo_transacao,
+                r.cd_bandeira
+            {_FROM_JOIN}
             WHERE {where}
             ORDER BY m.dt_movimentacao DESC NULLS LAST, m.nr_sequencia DESC
             LIMIT %(limit)s OFFSET %(offset)s

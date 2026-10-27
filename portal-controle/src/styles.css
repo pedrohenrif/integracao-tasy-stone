@@ -627,6 +627,7 @@ th {
 tbody tr:nth-child(even) { background: #f8fbfc; }
 tbody tr:hover { background: var(--blue-soft); }
 tbody tr.row-selected { background: #d7eef9; }
+tbody tr.row-gap { background: #fdecea; }
 .num { text-align: right; white-space: nowrap; }
 .obs { max-width: 260px; word-break: break-word; color: var(--muted); }
 

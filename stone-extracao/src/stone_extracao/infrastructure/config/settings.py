@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     CARTAO_CRON_MINUTE: int = 30
     # Segunda tentativa D-1 (mesmo dia anterior)
     CARTAO_CRON_RETRY_HOUR: int = 6
-    CARTAO_CRON_RETRY_MINUTE: int = 0
+    CARTAO_CRON_RETRY_MINUTE: int = 30
     CARTAO_CRON_TZ: str = "America/Sao_Paulo"
 
     # Rotina diária PIX D-1 (solicita extrato; Stone entrega no webhook)

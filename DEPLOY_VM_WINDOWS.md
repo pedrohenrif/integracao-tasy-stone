@@ -175,7 +175,7 @@ Proxy público (se usado):
 | Fluxo | Horário (.env) | Painel | O que faz |
 |-------|----------------|--------|-----------|
 | PIX | `PIX_CRON_*` (~04:05) | Scheduler → PIX | Solicita extrato D-1 → webhook (mesmo vazio) |
-| Cartão | `CARTAO_CRON_*` (~05:30) | Scheduler → Cartão | **Fallback**: só se o webhook PIX não disparou cartão (`LOTE_AGUARDA_PIX_WEBHOOK=true`) |
+| Cartão | `CARTAO_CRON_*` (~05:30) + RETRY (~06:30) | Scheduler → Cartão | 1º = fallback se o webhook PIX não disparou cartão. **RETRY republica o D-1** (msgs perdidas na fila). |
 
 Com `LOTE_AGUARDA_PIX_WEBHOOK=true` (padrão): ordem do lote = solicitar PIX → webhook → publicar PIX + disparar cartão → consumer unifica recebimento → FECHAR após quiet period.  
 Diagnóstico: `stone-extracao.err.log` — `Lote dia` / `aguardando webhook` / `disparando cartão` / `Webhook PIX` / `reprocessar_dia | PIX`.

@@ -8,7 +8,7 @@ type Props = {
   showStatus?: boolean;
 };
 
-const TIPOS = [
+export const TIPOS = [
   { id: "credit_card", label: "Crédito" },
   { id: "debit_card", label: "Débito" },
   { id: "prepaid_debit", label: "Pré-pago débito" },
@@ -16,7 +16,7 @@ const TIPOS = [
   { id: "pix", label: "PIX" },
 ];
 
-const STATUS = [
+export const STATUS = [
   { id: "5", label: "Integrado" },
   { id: "6", label: "Retry" },
   { id: "7", label: "DLQ" },
@@ -28,7 +28,7 @@ const STATUS = [
   { id: "2", label: "Processando" },
 ];
 
-const BANDEIRAS = [
+export const BANDEIRAS = [
   { id: "visa", label: "Visa" },
   { id: "mastercard", label: "Mastercard" },
   { id: "elo", label: "Elo" },
@@ -58,7 +58,7 @@ function toggleToken(csv: string | undefined, id: string): string {
   return [...set].join(",");
 }
 
-function ChipGroup({
+export function ChipGroup({
   title,
   hint,
   options,

@@ -558,6 +558,12 @@ export type MovimentoStone = {
   publicado: string;
   ds_motivo: string | null;
   source: string | null;
+  nr_seq_registro?: number | null;
+  cd_status?: number | null;
+  cd_caixa?: number | null;
+  ds_caixa?: string | null;
+  cd_tipo_transacao?: string | null;
+  cd_bandeira?: string | null;
 };
 
 export async function pixBackupApi(date: string) {
@@ -596,6 +602,14 @@ export async function movimentosStoneApi(filtros: {
   nr_serie?: string;
   publicado?: string;
   id_stone?: string;
+  vl_min?: string;
+  vl_max?: string;
+  casou?: string;
+  cd_caixa?: string;
+  tipo?: string;
+  bandeira?: string;
+  cd_status?: string;
+  obs?: string;
   limit?: string;
   offset?: string;
 }) {
@@ -608,7 +622,11 @@ export async function movimentosStoneApi(filtros: {
       total?: number;
       publicados?: number;
       nao_publicados?: number;
+      casaram?: number;
+      nao_casaram?: number;
       soma_valor?: number;
+      soma_casaram?: number;
+      soma_nao_casaram?: number;
     };
     items: MovimentoStone[];
   }>(`/api/movimentos-stone?${p.toString()}`);

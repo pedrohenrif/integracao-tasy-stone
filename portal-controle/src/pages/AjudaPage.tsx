@@ -62,6 +62,8 @@ const BLOCKS: HelpBlock[] = [
     title: "Movimentos Stone",
     body: [
       "Lista o que veio no arquivo da Stone (CSV PIX e XML de cartão), mesmo o que não foi integrado.",
+      "Cards: Stone (arquivo) vs Casaram (já em Integrações) vs Sem lançamento (furo). Linha vermelha = não casou.",
+      "Filtros iguais ao de Integrações: caixa, tipo, bandeira, status, valor. Comparação = só o que casou ou só o furo.",
       "Publicado = sim: entrou na fila. Não: máquina inativa/não cadastrada, status diferente de paid, etc.",
       "Se o valor existe aqui e não em Integrações, o arquivo chegou e a integração falhou ou ignorou — vá em Reprocessar ou Maquininhas.",
       "Se a lista PIX estiver vazia mas o CSV já chegou na VM, use Carregar relação do CSV. Isso só preenche a tela — não lança de novo no Tasy.",
@@ -138,7 +140,7 @@ const BLOCKS: HelpBlock[] = [
     adminOnly: true,
     body: [
       "Liga/desliga a rotina automática D-1 de cartão e de PIX.",
-      "Cartão: baixa o extrato de ontem e publica na fila.",
+      "Cartão: 1º horário é fallback (só se o webhook PIX ainda não disparou). 2º (RETRY) republica o D-1 mesmo depois do lote — pega 1–2 msgs que sumiram na fila.",
       "PIX: solicita o extrato de ontem; a Stone envia o arquivo no webhook público.",
       "Horários vêm do .env na VM (CARTAO_CRON_* e PIX_CRON_*).",
       "A tela mostra a última execução (OK/ERRO). Falhas também entram na Auditoria (login sistema), se PORTAL_INTERNAL_TOKEN estiver nos dois .env.",
